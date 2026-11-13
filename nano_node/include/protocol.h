@@ -21,7 +21,8 @@ static const uint8_t PRE_SHARED_KEY[16] = {
 // Physical plausibility boundaries
 #define PLAUSIBILITY_TEMP_MIN_RAW   -1000   // -10.00 C
 #define PLAUSIBILITY_TEMP_MAX_RAW    8500   // +85.00 C
-#define PLAUSIBILITY_MAX_DELTA_C_S   5.0f   // Max 5.0 C change per second
+#define PLAUSIBILITY_MAX_DELTA_C_S          5.0f   // Max 5.0 C change per second
+#define PLAUSIBILITY_MAX_DELTA_RAW_PER_SEC  500    // Max 5.00 C/s in raw centi-degrees (integer arithmetic)
 
 // Rate limiting parameters (on Nucleo verifier)
 #define RATE_LIMIT_MAX_PKT_PER_SEC   5      // Max 5 packets per 1000 ms window

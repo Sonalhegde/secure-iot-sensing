@@ -1,8 +1,17 @@
 #include "crypto_sha256.h"
 #include <string.h>
 
-// SHA-256 constants
-static const uint32_t K[64] = {
+#if defined(__AVR__)
+#include <avr/pgmspace.h>
+#define SHA256_PROGMEM PROGMEM
+#define READ_K(i) pgm_read_dword(&K[i])
+#else
+#define SHA256_PROGMEM
+#define READ_K(i) (K[i])
+#endif
+
+// SHA-256 round constants (stored in Flash PROGMEM on AVR to save 256 bytes of precious SRAM)
+static const uint32_t K[64] SHA256_PROGMEM = {
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
     0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
     0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
@@ -42,7 +51,7 @@ static void sha256_transform(SHA256_CTX *ctx, const uint8_t data[]) {
     h = ctx->state[7];
 
     for (i = 0; i < 64; ++i) {
-        t1 = h + EP1(e) + CH(e, f, g) + K[i] + m[i];
+        t1 = h + EP1(e) + CH(e, f, g) + READ_K(i) + m[i];
         t2 = EP0(a) + MAJ(a, b, c);
         h = g;
         g = f;
@@ -130,6 +139,14 @@ void sha256_final(SHA256_CTX *ctx, uint8_t hash[]) {
     }
 }
 
+// Volatile secure zeroization helper to cleanse stack memory
+static void secure_memzero(void *ptr, size_t len) {
+    volatile uint8_t *p = (volatile uint8_t *)ptr;
+    while (len--) {
+        *p++ = 0;
+    }
+}
+
 // RFC 2104 HMAC-SHA256
 void hmac_sha256(const uint8_t *key, size_t key_len,
                  const uint8_t *msg, size_t msg_len,
@@ -165,13 +182,21 @@ void hmac_sha256(const uint8_t *key, size_t key_len,
     sha256_update(&ctx, k_pad, SHA256_BLOCK_SIZE);
     sha256_update(&ctx, out_digest, SHA256_DIGEST_SIZE);
     sha256_final(&ctx, out_digest);
+
+    // Cleanse sensitive key material and intermediate state from stack
+    secure_memzero(k_pad, sizeof(k_pad));
+    secure_memzero(tk, sizeof(tk));
+    secure_memzero(&ctx, sizeof(ctx));
 }
 
 // Constant-time tag comparison to prevent timing leaks
 uint8_t hmac_constant_time_equal(const uint8_t *a, const uint8_t *b, size_t len) {
-    uint8_t diff = 0;
+    volatile uint8_t diff = 0;
     for (size_t i = 0; i < len; ++i) {
         diff |= (a[i] ^ b[i]);
+#if defined(__GNUC__) || defined(__clang__)
+        __asm__ __volatile__("" : "+r"(diff) : : "memory");
+#endif
     }
     return (diff == 0) ? 1 : 0;
 }

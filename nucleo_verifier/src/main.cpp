@@ -132,15 +132,14 @@ void process_frame(const Packet16 *pkt) {
         return;
     }
 
-    // Check 4b: Physical rate of change [Max 5.0 C/s]
+    // Check 4b: Physical rate of change [Max 5.0 C/s = 500 raw units/s]
+    // Uses integer cross-multiplication: delta_raw * 1000 > MAX_DELTA_RAW * dt_ms
     if (!is_first_packet) {
         uint32_t dt_ms = now_ms - last_accepted_time_ms;
         if (dt_ms == 0) dt_ms = 1; // guard against division by zero
-        float dt_sec = (float)dt_ms / 1000.0f;
-        float delta_c = fabsf(temp_c - ((float)last_accepted_temp_raw / 100.0f));
-        float rate_c_per_sec = delta_c / dt_sec;
+        uint32_t delta_raw = (uint32_t)abs((int32_t)rx_temp_raw - (int32_t)last_accepted_temp_raw);
 
-        if (rate_c_per_sec > PLAUSIBILITY_MAX_DELTA_C_S) {
+        if ((uint64_t)delta_raw * 1000ULL > (uint64_t)PLAUSIBILITY_MAX_DELTA_RAW_PER_SEC * dt_ms) {
             uint32_t cycles = DWT->CYCCNT - t_start;
             Serial.print(F("LOG,FALSE_DATA,"));
             Serial.print(rx_counter);

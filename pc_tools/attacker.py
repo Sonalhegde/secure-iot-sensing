@@ -24,17 +24,22 @@ os.makedirs(CAPTURE_DIR, exist_ok=True)
 # Set deterministic seed for reproducible evaluations
 random.seed(42)
 
-def open_serial(port: str, baud: int = 115200, timeout: float = 1.0) -> serial.Serial:
-    try:
-        ser = serial.Serial(port, baudrate=baud, timeout=timeout)
-        time.sleep(2.0)  # Settle STM32 / USB VCP
-        ser.reset_input_buffer()
-        ser.reset_output_buffer()
-        return ser
-    except serial.SerialException as e:
-        print(f"[ERROR] Failed to open serial port {port}: {e}")
-        print("        Ensure no serial monitor (PlatformIO/Arduino) is holding the port open.")
-        sys.exit(1)
+def open_serial(port: str, baud: int = 115200, timeout: float = 1.0, max_retries: int = 3) -> serial.Serial:
+    for attempt in range(1, max_retries + 1):
+        try:
+            ser = serial.Serial(port, baudrate=baud, timeout=timeout)
+            time.sleep(2.0)  # Settle STM32 / USB VCP
+            ser.reset_input_buffer()
+            ser.reset_output_buffer()
+            return ser
+        except serial.SerialException as e:
+            print(f"\n[WARNING] Attempt {attempt}/{max_retries}: Failed to open serial port {port}: {e}")
+            print("          Port may be locked by PlatformIO Serial Monitor or another terminal.")
+            if attempt < max_retries:
+                input("          Please close any open serial monitors in VS Code (trash icon in terminal), then press Enter to retry...")
+            else:
+                print("[ERROR] Could not acquire serial port after multiple attempts. Exiting.")
+                sys.exit(1)
 
 def read_verifier_log(ser: serial.Serial, timeout_s: float = 1.0) -> dict:
     """Reads lines from Nucleo until a LOG line is captured or timeout occurs."""
