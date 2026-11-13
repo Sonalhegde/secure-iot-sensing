@@ -11,45 +11,29 @@ An end-to-end, reproducible embedded security framework for resource-constrained
 
 ## 1. System Architecture
 
-```
-+------------------+         +----------------------+         +-----------------------+         +------------------+
-| DS18B20 Sensor   | OneWire | Arduino Nano Clone   | UART TX | STM32 Nucleo-L476RG   | USB VCP | PC Host          |
-| Waterproof Probe |-------->| (ATmega328P, 16 MHz) |-------->| (Cortex-M4, 80 MHz)   |-------->| (Python Attack   |
-| 10-bit / D2 Pin  |         | Signs 16B Frame      | 1k/2k   | 5-Stage Verification  | ST-Link | & Eval Suite)    |
-+------------------+         +----------------------+ Divider +-----------------------+         +------------------+
+```mermaid
+flowchart LR
+    DS["DS18B20 Sensor<br/>(Waterproof Probe)"] -->|OneWire (D2)| Nano["Arduino Nano Node<br/>(ATmega328P, 16 MHz)"]
+    Nano -->|UART TX (D1)| Div["Voltage Divider<br/>(1k / 2k to 3.3V)"]
+    Div -->|UART RX (PA10)| Nucleo["STM32 Nucleo-L476RG<br/>(Cortex-M4, 80 MHz)"]
+    Nucleo -->|USB VCP (ST-Link)| PC["PC Host<br/>(Python Attack & Eval Suite)"]
 ```
 
 ### The 5-Stage Verification Pipeline
 
 The verifier executes defense checks in a strictly ordered pipeline. Early stages reject malicious or abnormal packets before expensive downstream operations execute:
 
-```
-  Incoming 16-Byte Wire Packet
-              |
-              v
-    +-------------------+
-    | 1. Rate Limiter   |---> [> 5 pkt/s] -------------> Log "FLOOD" (Drops BEFORE Crypto!)
-    +-------------------+                                (~120 cycles / 1.5 µs)
-              |
-              v
-    +-------------------+
-    | 2. HMAC-SHA256    |---> [Tag Mismatch] -----------> Log "TAMPER"
-    +-------------------+     (Constant-Time 64-bit)     (~42,000 cycles)
-              |
-              v
-    +-------------------+
-    | 3. Sequence Count |---> [Counter <= Last Seen] ---> Log "REPLAY"
-    +-------------------+     (Monotonic / Anti-Replay)
-              |
-              v
-    +-------------------+
-    | 4. Plausibility   |---> [Out of Bounds / Jump] ---> Log "FALSE_DATA"
-    +-------------------+     ([-10°C to +85°C, <=5°C/s])
-              |
-              v
-    +-------------------+
-    | 5. Accept & State |---> Valid Authenticated Sensor Data Accepted
-    +-------------------+     (State updated ONLY after all checks pass)
+```mermaid
+flowchart TD
+    Start(["Incoming 16-Byte Wire Packet"]) --> S1{"1. Rate Limiter<br/>Rate <= 5 pkt/s?"}
+    S1 -->|No: Rate > 5 pkt/s| DropFlood["Drop Packet & Log 'FLOOD'<br/>(Pre-Crypto Early Exit: ~120 cycles / 1.5 µs)"]
+    S1 -->|Yes| S2{"2. HMAC-SHA256<br/>64-bit Tag Matches?"}
+    S2 -->|No: Tag Mismatch| DropTamper["Drop Packet & Log 'TAMPER'<br/>(Constant-Time Check: ~42,000 cycles)"]
+    S2 -->|Yes| S3{"3. Sequence Counter<br/>Counter > Last Seen?"}
+    S3 -->|No: Counter <= Last| DropReplay["Drop Packet & Log 'REPLAY'<br/>(Anti-Replay Rejection)"]
+    S3 -->|Yes| S4{"4. Plausibility Check<br/>-10°C <= Temp <= +85°C &<br/>|ΔT|/Δt <= 5.0°C/s?"}
+    S4 -->|No: Anomaly Detected| DropFalse["Drop Packet & Log 'FALSE_DATA'<br/>(Physical Anomaly Rejection)"]
+    S4 -->|Yes| Accept["5. State Update & Acceptance<br/>- Update last_accepted_counter<br/>- Update last_accepted_temp<br/>- Update last_accepted_time<br/>Log 'ACCEPT' & Output Hex Frame"]
 ```
 
 1. **Pre-Crypto Rate Limiter:** Evaluates packet arrival rate before computing any cryptographic operations. Bursts exceeding 5 packets/second are dropped in **~120 cycles (1.5 µs)**, preventing Denial-of-Service CPU exhaustion.
@@ -62,7 +46,50 @@ The verifier executes defense checks in a strictly ordered pipeline. Early stage
 
 ---
 
-## 2. Hardware Bill of Materials & Wiring
+## 2. Telemetry Timing & State Machine
+
+### Secure Telemetry Sequence
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Sensor as DS18B20 Sensor
+    participant Nano as Arduino Nano Node
+    participant Wire as Level-Shifted UART
+    participant Nucleo as STM32 Nucleo Verifier
+    participant PC as PC Host (attacker.py)
+
+    loop Periodic Telemetry (1 Hz)
+        Nano->>Sensor: requestTemperatures() (10-bit, ~188 ms)
+        Sensor-->>Nano: getTempCByIndex(0)
+        Nano->>Nano: Increment Sequence Counter (EEPROM sync every 100)
+        Nano->>Nano: Serialize Payload [NodeID(1B) | Counter(4B) | Temp(2B)]
+        Nano->>Nano: Compute HMAC-SHA256 & Truncate to 8 Bytes
+        Nano->>Wire: Transmit 16-Byte Wire Packet at 115200 baud
+        Wire->>Nucleo: SerialNano PA10 (USART1 RX)
+        Nucleo->>Nucleo: Check Rate Limiter (<= 5 pkt/s)
+        Nucleo->>Nucleo: Constant-Time HMAC-SHA256 Validation
+        Nucleo->>Nucleo: Monotonic Counter Freshness Check
+        Nucleo->>Nucleo: Thermodynamic Plausibility Check
+        Nucleo->>PC: Log CSV [LOG,ACCEPT,counter,temp,cycles]
+        Nucleo->>PC: Stream Packet Hex [HEX,aa01...]
+    end
+```
+
+### UART Frame Resync State Machine
+```mermaid
+stateDiagram-v2
+    [*] --> WAIT_PREAMBLE: rx_index = 0
+    WAIT_PREAMBLE --> ACCUMULATE: Byte == 0xAA (Preamble matched)
+    WAIT_PREAMBLE --> WAIT_PREAMBLE: Byte != 0xAA (Ignore line noise)
+    ACCUMULATE --> ACCUMULATE: Byte received & rx_index < 16 & dt <= 20ms
+    ACCUMULATE --> WAIT_PREAMBLE: dt > 20ms (Inter-byte timeout reset)
+    ACCUMULATE --> PROCESS_FRAME: rx_index == 16 (Full frame captured)
+    PROCESS_FRAME --> WAIT_PREAMBLE: process_frame() & rx_index = 0
+```
+
+---
+
+## 3. Hardware Bill of Materials & Wiring
 
 ### Bill of Materials
 - **Sensor Node:** Arduino Nano clone (ATmega328P, 5 V logic, 16 MHz, 2 KB SRAM, 32 KB Flash)
@@ -97,13 +124,13 @@ Arduino Nano USB  -----> PC (Programming only; unplug D1 during uploads)
 Nucleo ST-Link USB-----> PC (Dual Virtual COM Port for logging and attack injection)
 ```
 
-> **Voltage Divider Note:**
+> **Voltage Divider Calculation:**
 > $$V_{\text{out}} = 5.0\text{ V} \times \frac{2\text{ k}\Omega}{1\text{ k}\Omega + 2\text{ k}\Omega} = 3.333\text{ V}$$
 > This provides a safe, level-shifted signal for STM32 3.3 V logic (Nucleo pin PA10 is also 5 V tolerant).
 
 ---
 
-## 3. Wire Protocol Specification
+## 4. Wire Protocol Specification
 
 Packets are 16 bytes, big-endian network order, packed with zero padding:
 
@@ -125,99 +152,92 @@ Packets are 16 bytes, big-endian network order, packed with zero padding:
 
 ---
 
-## 4. Repository Structure
+## 5. Getting Started: PlatformIO Build, Flash & Execution Guide
 
+This repository is organized as a multi-root workspace containing two embedded PlatformIO targets (`nano_node` and `nucleo_verifier`) alongside a Python evaluation suite (`pc_tools`).
+
+### Prerequisites
+1. **VS Code** with the **PlatformIO IDE** extension installed, or PlatformIO Core CLI (`pio`).
+2. **Python 3.9+** with virtual environment support.
+3. **USB Drivers**:
+   - CH340 / FTDI drivers for the Arduino Nano clone.
+   - ST-LINK USB VCP drivers for the STM32 Nucleo-L476RG board.
+
+---
+
+### Option A: Using PlatformIO in VS Code (`secure_iot.code-workspace`)
+
+1. Open VS Code, select **File -> Open Workspace from File...**, and choose `secure_iot.code-workspace`.
+2. Open the **PlatformIO sidebar (alien icon)** -> **Project Tasks**:
+   - **Flashing the Arduino Nano (`nano_node`):**
+     1. **Important:** Temporarily unplug the jumper wire on pin **D1** (TX) to prevent avrdude upload collisions.
+     2. Connect the Arduino Nano via USB.
+     3. Under `nano_node`, click **Build**, then click **Upload**.
+     4. Reconnect wire **D1** after the upload completes.
+   - **Flashing the STM32 Nucleo (`nucleo_verifier`):**
+     1. Connect the STM32 Nucleo via its ST-LINK USB port.
+     2. Under `nucleo_verifier`, click **Build**, then click **Upload**.
+
+---
+
+### Option B: Using PlatformIO Core CLI (Terminal)
+
+#### 1. Compile & Flash the Sensor Node (`nano_node`)
+```bash
+# Navigate to the sensor node project
+cd nano_node
+
+# Compile firmware
+pio run
+
+# Flash to Arduino Nano (disconnect D1 jumper before running)
+pio run --target upload
+
+# (Optional) Specify COM port if multiple devices are attached:
+# pio run --target upload --upload-port COM4
 ```
-secure-iot-sensing/
-├── README.md                      # Comprehensive project documentation
-├── LICENSE                        # MIT License
-├── .gitignore                     # PlatformIO, IDE, and Python build ignores
-├── secure_iot.code-workspace      # VS Code multi-root workspace definition
-│
-├── nano_node/                     # Arduino Nano sensor node firmware
-│   ├── platformio.ini             # PlatformIO build configuration (atmelavr)
-│   ├── include/
-│   │   ├── protocol.h             # Wire packet struct, serialization & secret key
-│   │   └── crypto_sha256.h        # C header for standalone SHA-256 / HMAC
-│   └── src/
-│       ├── main.cpp               # DS18B20 sampling, EEPROM counter & packet TX
-│       └── crypto_sha256.cpp      # RFC 2104 compliant HMAC-SHA256 implementation
-│
-├── nucleo_verifier/               # STM32 Nucleo-L476RG verifier firmware
-│   ├── platformio.ini             # PlatformIO build configuration (ststm32)
-│   ├── include/
-│   │   ├── protocol.h             # Identical wire protocol definitions
-│   │   └── crypto_sha256.h        # Cryptographic declarations & constant-time compare
-│   └── src/
-│       ├── main.cpp               # 5-stage verification pipeline & DWT benchmarking
-│       └── crypto_sha256.cpp      # Verifier HMAC-SHA256 implementation
-│
-├── pc_tools/                      # Python PC host attack, logging & evaluation suite
-│   ├── requirements.txt           # Python dependencies (pyserial, pandas, matplotlib)
-│   ├── protocol.py                # Python packet packing & HMAC-SHA256 reference
-│   ├── attacker.py                # Automated attack suite (Tamper, Replay, Flood, False-Data)
-│   ├── evaluator.py               # Metrics parser: True Positive Rate, False Positive Rate, cycles
-│   ├── plot_results.py            # Generates IEEE publication-ready figures
-│   └── README.md                  # Detailed PC tools manual
-│
-└── examples/
-    └── milestone1_uart_echo/      # Initial hardware bringup test sketches
-        ├── first_test_nano.cpp.txt
-        └── first_test_nucleo.cpp.txt
+
+#### 2. Compile & Flash the Verifier Node (`nucleo_verifier`)
+```bash
+# Navigate to the verifier project
+cd ../nucleo_verifier
+
+# Compile firmware
+pio run
+
+# Flash to STM32 Nucleo via ST-Link
+pio run --target upload
 ```
 
 ---
 
-## 5. Getting Started
+## 6. Running Security Evaluations (`pc_tools`)
 
-### Prerequisites
+Ensure all serial monitors in VS Code or external terminals are **closed** so the COM port is accessible to the Python evaluation suite.
 
-1. **PlatformIO Core (CLI) or VS Code with PlatformIO IDE extension**
-2. **Python 3.9+** with virtual environment support
-
-### 1. Install PC Host Dependencies
-
+### 1. Install Dependencies
 ```bash
 cd pc_tools
 python -m venv venv
+
 # On Windows:
 venv\Scripts\activate
-# On Linux/macOS:
+# On Linux / macOS:
 source venv/bin/activate
 
 pip install -r requirements.txt
 ```
 
-### 2. Build and Flash Firmwares
-
-Open the folder in PlatformIO or flash via CLI:
-
-#### Flash the Arduino Nano:
-*(Disconnect wire D1 during flashing to avoid bootloader interference)*
+### 2. Capture Genuine Packets (Baseline)
+Connect the STM32 Nucleo to your PC via USB:
 ```bash
-pio run -d nano_node -t upload
+python attacker.py --port COM3 --mode capture --count 1000
 ```
+*(Replace `COM3` with your Nucleo ST-Link virtual COM port)*
 
-#### Flash the STM32 Nucleo:
+### 3. Run Automated Attack Suite (1,000 trials per attack)
 ```bash
-pio run -d nucleo_verifier -t upload
-```
-
----
-
-## 6. Running Security Evaluations
-
-Connect the STM32 Nucleo to your PC via USB (identifies as a Virtual COM Port, e.g., `COM3` on Windows or `/dev/ttyACM0` on Linux).
-
-### Step A: Capture Genuine Packets (Baseline)
-```bash
-python pc_tools/attacker.py --port COM3 --mode capture --count 1000
-```
-Captures 1,000 genuine packets into `pc_tools/captures/genuine_packets.csv` and `genuine_packets.bin`.
-
-### Step B: Run Automated Attack Experiments (1,000 trials per attack)
-```bash
-python pc_tools/attacker.py --port COM3 --mode all --count 1000
+python attacker.py --port COM3 --mode all --count 1000
 ```
 This automatically executes:
 1. **Clean Baseline:** Evaluates uncorrupted sequential traffic (verifies 0% False Positive Rate).
@@ -226,15 +246,15 @@ This automatically executes:
 4. **Flood Attack:** Bursts high-speed packets (>100 pkt/s) $\rightarrow$ Dropped pre-crypto and logged as `FLOOD`.
 5. **False-Data Attack:** Injects validly signed packets with out-of-bounds ($95^\circ\text{C}$) or rapid jump ($+15^\circ\text{C}/\text{s}$) data $\rightarrow$ Flagged and logged as `FALSE_DATA`.
 
-### Step C: Parse Metrics and CPU Cycle Savings
+### 4. Parse Metrics and CPU Cycle Savings
 ```bash
-python pc_tools/evaluator.py
+python evaluator.py
 ```
 Outputs IEEE-formatted summary tables showing Detection Rate (%), False Positive Rate (%), average DWT cycle latency, and CPU cycle reduction.
 
-### Step D: Generate Publication Figures
+### 5. Generate Publication Figures
 ```bash
-python pc_tools/plot_results.py
+python plot_results.py
 ```
 Exports high-resolution charts to `pc_tools/results/`:
 - `fig_detection_rates.png`: Detection accuracy across all threat vectors ($N=1,000$ per class).
@@ -258,10 +278,10 @@ Key: 2b 7e 15 16 28 ae d2 a6 ab f7 15 88 09 cf 4f 3c
 - **Temperature:** `+24.00 °C` -> Raw `2400` (`0x0960`)
 - **Serialized 7-Byte Payload:** `01 00 00 00 01 09 60`
 - **Full HMAC-SHA256 (32 Bytes):**
-  `ca 86 0f 63 f9 6b e4 73 8d 64 b9 eb fa a9 ec fe e8 ad e8 7f e9 a5 91 16 57 e3 5f b7 fb 62 e4 59`
-- **Truncated 8-Byte Tag:** `ca 86 0f 63 f9 6b e4 73`
+  `ca bd db 1d 4c 36 06 8d ad 0d 2e 63 a0 8d e8 01 b2 68 85 e8 af c6 99 80 80 e6 3e 26 fe 47 77 54`
+- **Truncated 8-Byte Tag:** `ca bd db 1d 4c 36 06 8d`
 - **Full 16-Byte Wire Packet:**
-  `AA 01 00 00 00 01 09 60 CA 86 0F 63 F9 6B E4 73`
+  `AA 01 00 00 00 01 09 60 CA BD DB 1D 4C 36 06 8D`
 
 #### Test Vector 2: Sub-Zero Negative Temperature (-5.50 °C)
 - **Node ID:** `0x01`
