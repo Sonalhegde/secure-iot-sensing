@@ -10,9 +10,9 @@
 #define EEPROM_COUNTER_ADDR 0   // 4 bytes for uint32_t counter
 
 // --- Configuration ---
-// 1 = Normal authenticated operation with real DS18B20
-// 0 = Synthetic payload generator for throughput / flood tests
-#define MODE_REAL_SENSOR        1
+// 1 = Normal authenticated operation with real DS18B20 sensor
+// 0 = Synthetic payload generator (use 0 for standalone testing before wiring sensor!)
+#define MODE_REAL_SENSOR        0
 #define ENABLE_BOOT_BENCHMARK   0   // Set 1 to print ASCII benchmark (disable when connected to Nucleo link)
 
 // --- Setup OneWire and DallasTemperature ---
