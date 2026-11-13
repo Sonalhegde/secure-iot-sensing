@@ -4,7 +4,11 @@
 
 // Hardware Serial link from Arduino Nano
 // Nucleo D2 is PA10 (USART1_RX), PA9 is USART1_TX
+#if defined(ARDUINO_ARCH_STM32)
+Uart SerialNano(PA10, PA9);
+#else
 HardwareSerial SerialNano(PA10, PA9);
+#endif
 
 // --- State Variables for Verification Pipeline ---
 static uint32_t last_accepted_counter = 0;
