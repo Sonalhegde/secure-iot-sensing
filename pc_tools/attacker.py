@@ -24,6 +24,14 @@ os.makedirs(CAPTURE_DIR, exist_ok=True)
 # Set deterministic seed for reproducible evaluations
 random.seed(42)
 
+def send_command(ser: serial.Serial, cmd: str):
+    """Sends an administrative control command to the Nucleo verifier."""
+    ser.write((cmd + "\n").encode("utf-8"))
+    ser.flush()
+    time.sleep(0.05)
+    while ser.in_waiting > 0:
+        ser.readline()
+
 def open_serial(port: str, baud: int = 115200, timeout: float = 1.0, max_retries: int = 3) -> serial.Serial:
     for attempt in range(1, max_retries + 1):
         try:
@@ -31,6 +39,7 @@ def open_serial(port: str, baud: int = 115200, timeout: float = 1.0, max_retries
             time.sleep(2.0)  # Settle STM32 / USB VCP
             ser.reset_input_buffer()
             ser.reset_output_buffer()
+            send_command(ser, "CMD,RESET")
             return ser
         except serial.SerialException as e:
             print(f"\n[WARNING] Attempt {attempt}/{max_retries}: Failed to open serial port {port}: {e}")
@@ -105,13 +114,15 @@ def load_captured_packets() -> list:
 def run_clean_baseline(ser: serial.Serial, count: int = 1000, out_csv=None):
     """Evaluates False Positive Rate (FPR) using strictly legitimate, sequential packets."""
     print(f"[*] Running Clean Traffic Baseline ({count} trials)...")
-    base_counter = 200000
+    send_command(ser, "CMD,RESET")
+    send_command(ser, "CMD,RATE_LIMIT,0")
+    base_counter = 1000
     results = []
 
     for i in range(count):
         base_counter += 1
-        # Realistic gradual ambient temperature (22.0 to 24.0 C)
-        simulated_temp = 23.0 + 0.5 * (i % 20) / 20.0
+        # Smooth continuous ambient drift (0.001 C per step = 0.1 C/s at 10ms intervals, well within 5.0 C/s limit)
+        simulated_temp = 23.0 + 0.001 * i
         pkt = build_packet(PROTOCOL_DEFAULT_NODE_ID, base_counter, simulated_temp)
 
         ser.write(pkt)
@@ -133,8 +144,9 @@ def run_clean_baseline(ser: serial.Serial, count: int = 1000, out_csv=None):
 def run_tamper_attack(ser: serial.Serial, count: int = 1000, out_csv=None):
     """Flipping random bits/bytes in genuine or synthetic packets."""
     print(f"[*] Running Tamper Attack Experiment ({count} trials)...")
+    send_command(ser, "CMD,RATE_LIMIT,0")
     captured = load_captured_packets()
-    base_counter = 300000
+    base_counter = 50000
 
     results = []
     for i in range(count):
@@ -165,10 +177,11 @@ def run_tamper_attack(ser: serial.Serial, count: int = 1000, out_csv=None):
 def run_replay_attack(ser: serial.Serial, count: int = 1000, out_csv=None):
     """Resending older, previously accepted packets with stale counters."""
     print(f"[*] Running Replay Attack Experiment ({count} trials)...")
+    send_command(ser, "CMD,RATE_LIMIT,0")
     captured = load_captured_packets()
 
     # Seed verifier with a high counter
-    high_counter = 600000
+    high_counter = 100000
     legit_pkt = build_packet(PROTOCOL_DEFAULT_NODE_ID, high_counter, 24.0)
     ser.write(legit_pkt)
     time.sleep(0.05)
@@ -201,7 +214,9 @@ def run_replay_attack(ser: serial.Serial, count: int = 1000, out_csv=None):
 def run_flood_attack(ser: serial.Serial, count: int = 1000, out_csv=None):
     """Flooding packets at high burst rate (>100 pkt/s) to evaluate pre-crypto rate limiting."""
     print(f"[*] Running Flood Attack Experiment ({count} packets at high burst rate)...")
-    counter = 800000
+    send_command(ser, "CMD,RESET")
+    send_command(ser, "CMD,RATE_LIMIT,1")
+    counter = 200000
     
     # Pre-build packet payloads to avoid loop serialization latency
     packets = []
@@ -234,7 +249,8 @@ def run_flood_attack(ser: serial.Serial, count: int = 1000, out_csv=None):
 def run_false_data_attack(ser: serial.Serial, count: int = 1000, out_csv=None):
     """Injecting validly HMAC-signed packets containing physically impossible jumps or extremes."""
     print(f"[*] Running False-Data (Physical Plausibility) Attack ({count} trials)...")
-    counter = 900000
+    send_command(ser, "CMD,RATE_LIMIT,0")
+    counter = 300000
     legit_pkt = build_packet(PROTOCOL_DEFAULT_NODE_ID, counter, 24.0)
     ser.write(legit_pkt)
     time.sleep(0.05)
@@ -306,6 +322,9 @@ def main():
             elif args.mode == "false_data":
                 run_false_data_attack(ser, args.count, f_out)
 
+    # Always restore default secure production state (rate limiting active, counters reset)
+    send_command(ser, "CMD,RATE_LIMIT,1")
+    send_command(ser, "CMD,RESET")
     ser.close()
 
 if __name__ == "__main__":

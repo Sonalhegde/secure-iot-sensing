@@ -19,6 +19,31 @@ static bool     is_first_packet = true;
 // Rate limiting state (sliding / epoch 1-second window)
 static uint32_t rate_window_start_ms = 0;
 static uint32_t packets_in_window = 0;
+static bool     rate_limit_enabled = true;
+
+// Test harness administrative command buffer (for automated attack benchmarking)
+static char    usb_cmd_buffer[32];
+static uint8_t usb_cmd_index = 0;
+
+static void handle_usb_command(const char *cmd) {
+    if (strcmp(cmd, "CMD,RESET") == 0) {
+        last_accepted_counter = 0;
+        last_accepted_temp_raw = 0;
+        last_accepted_time_ms = 0;
+        is_first_packet = true;
+        packets_in_window = 0;
+        rate_window_start_ms = millis();
+        Serial.println(F("OK,RESET"));
+    } else if (strcmp(cmd, "CMD,RATE_LIMIT,0") == 0) {
+        rate_limit_enabled = false;
+        Serial.println(F("OK,RATE_LIMIT,0"));
+    } else if (strcmp(cmd, "CMD,RATE_LIMIT,1") == 0) {
+        rate_limit_enabled = true;
+        packets_in_window = 0;
+        rate_window_start_ms = millis();
+        Serial.println(F("OK,RATE_LIMIT,1"));
+    }
+}
 
 // Separate reception buffers for Hardware UART link and PC USB link
 // Eliminates race conditions when injecting attacks over USB while Nano streams
@@ -66,21 +91,23 @@ void process_frame(const Packet16 *pkt) {
     // =========================================================================
     // STEP 1: Rate Limiter (Drop flood packets BEFORE any cryptographic ops)
     // =========================================================================
-    if (now_ms - rate_window_start_ms >= 1000) {
-        rate_window_start_ms = now_ms;
-        packets_in_window = 0;
-    }
-    packets_in_window++;
+    if (rate_limit_enabled) {
+        if (now_ms - rate_window_start_ms >= 1000) {
+            rate_window_start_ms = now_ms;
+            packets_in_window = 0;
+        }
+        packets_in_window++;
 
-    if (packets_in_window > RATE_LIMIT_MAX_PKT_PER_SEC) {
-        uint32_t cycles = DWT->CYCCNT - t_start;
-        Serial.print(F("LOG,FLOOD,"));
-        Serial.print(rx_counter);
-        Serial.print(F(","));
-        Serial.print(temp_c, 2);
-        Serial.print(F(","));
-        Serial.println(cycles);
-        return; // Early exit: saved cryptographic CPU cost!
+        if (packets_in_window > RATE_LIMIT_MAX_PKT_PER_SEC) {
+            uint32_t cycles = DWT->CYCCNT - t_start;
+            Serial.print(F("LOG,FLOOD,"));
+            Serial.print(rx_counter);
+            Serial.print(F(","));
+            Serial.print(temp_c, 2);
+            Serial.print(F(","));
+            Serial.println(cycles);
+            return; // Early exit: saved cryptographic CPU cost!
+        }
     }
 
     // =========================================================================
@@ -220,8 +247,19 @@ void loop() {
 
         if (usb_rx_index == 0) {
             if (b == PROTOCOL_PREAMBLE) {
+                usb_cmd_index = 0;
                 usb_rx_buffer[0] = b;
                 usb_rx_index = 1;
+            } else if (b == '\n' || b == '\r') {
+                if (usb_cmd_index > 0) {
+                    usb_cmd_buffer[usb_cmd_index] = '\0';
+                    handle_usb_command(usb_cmd_buffer);
+                    usb_cmd_index = 0;
+                }
+            } else if (b >= 32 && b <= 126) {
+                if (usb_cmd_index < sizeof(usb_cmd_buffer) - 1) {
+                    usb_cmd_buffer[usb_cmd_index++] = (char)b;
+                }
             }
         } else {
             usb_rx_buffer[usb_rx_index++] = b;
