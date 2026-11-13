@@ -1,0 +1,36 @@
+// ============================================================================
+// FIRST TEST: Plain Temperature Echo (Day 1 Wiring Verification)
+// ============================================================================
+// To use this test:
+// 1. Rename this file to main.cpp (backup the current main.cpp)
+// 2. Upload to the Arduino Nano (remember to disconnect D1 during upload)
+// 3. Reconnect D1 to the voltage divider
+// ============================================================================
+
+#include <Arduino.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
+
+#define ONE_WIRE_BUS 2
+
+OneWire oneWire(ONE_WIRE_BUS);
+DallasTemperature sensors(&oneWire);
+
+void setup() {
+    Serial.begin(115200);
+    sensors.begin();
+    sensors.setResolution(10);
+    delay(1000);
+    Serial.println(F("[Nano] Test firmware started. Reading DS18B20 on D2..."));
+}
+
+void loop() {
+    sensors.requestTemperatures();
+    float temp_c = sensors.getTempCByIndex(0);
+
+    Serial.print(F("TEMP: "));
+    Serial.print(temp_c, 2);
+    Serial.println(F(" C"));
+
+    delay(1000);
+}

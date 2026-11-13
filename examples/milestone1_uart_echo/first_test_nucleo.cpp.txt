@@ -1,0 +1,28 @@
+// ============================================================================
+// FIRST TEST: Plain UART Echo to PC USB (Day 1 Wiring Verification)
+// ============================================================================
+// To use this test:
+// 1. Rename this file to main.cpp (backup the current main.cpp)
+// 2. Upload to the STM32 Nucleo-L476RG via ST-Link
+// 3. Open Serial Monitor on the ST-Link COM port at 115200 baud
+// ============================================================================
+
+#include <Arduino.h>
+
+// Link from Nano: D2 is PA10 (USART1 RX)
+HardwareSerial SerialNano(PA10, PA9);
+
+void setup() {
+    Serial.begin(115200);      // USB to PC
+    SerialNano.begin(115200);  // Link from Nano
+    delay(1000);
+    Serial.println(F("[Nucleo] First test: listening on PA10 (D2) and echoing to USB..."));
+}
+
+void loop() {
+    // Echo any byte received from the Nano to the PC USB terminal
+    while (SerialNano.available()) {
+        char c = (char)SerialNano.read();
+        Serial.print(c);
+    }
+}

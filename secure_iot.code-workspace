@@ -1,0 +1,17 @@
+{
+	"folders": [
+		{
+			"name": "nano_node",
+			"path": "nano_node"
+		},
+		{
+			"name": "nucleo_verifier",
+			"path": "nucleo_verifier"
+		},
+		{
+			"name": "pc_tools",
+			"path": "pc_tools"
+		}
+	],
+	"settings": {}
+}
