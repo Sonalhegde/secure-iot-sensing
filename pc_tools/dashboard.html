@@ -1,0 +1,1570 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SECURE-IOT // CYBERPUNK TELEMETRY & VERIFICATION HUD</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@600;800;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-dark: #07090e;
+    --bg-panel: #0d111a;
+    --bg-panel-alt: #131926;
+    --border-dim: #1f2a3d;
+    --border-bright: #00f0ff;
+    --cyan: #00f0ff;
+    --cyan-glow: rgba(0, 240, 255, 0.4);
+    --green: #00ff88;
+    --green-glow: rgba(0, 255, 136, 0.4);
+    --magenta: #ff0055;
+    --magenta-glow: rgba(255, 0, 85, 0.5);
+    --amber: #ffaa00;
+    --amber-glow: rgba(255, 170, 0, 0.4);
+    --purple: #9933ff;
+    --text-primary: #e6f1ff;
+    --text-muted: #798ea4;
+    --font-mono: 'Share Tech Mono', 'Consolas', monospace;
+    --font-head: 'Orbitron', sans-serif;
+    --font-ui: 'Rajdhani', sans-serif;
+  }
+
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    background-color: var(--bg-dark);
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    min-height: 100vh;
+    overflow-x: hidden;
+    background-image: 
+      linear-gradient(rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+    background-size: 30px 30px;
+    position: relative;
+  }
+
+  /* Scanline effect */
+  body::before {
+    content: " ";
+    position: fixed;
+    top: 0; left: 0; bottom: 0; right: 0;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%);
+    background-size: 100% 4px;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0.6;
+  }
+
+  header {
+    background: linear-gradient(180deg, #0f1624 0%, #080c14 100%);
+    border-bottom: 2px solid var(--border-dim);
+    padding: 12px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.8);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .logo-icon {
+    width: 36px;
+    height: 36px;
+    background: var(--cyan);
+    clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #000;
+    font-weight: 900;
+    font-family: var(--font-head);
+    font-size: 18px;
+    box-shadow: 0 0 15px var(--cyan-glow);
+  }
+
+  .brand h1 {
+    font-family: var(--font-head);
+    font-size: 18px;
+    letter-spacing: 2px;
+    color: #fff;
+    text-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
+  }
+
+  .brand .sub {
+    font-size: 11px;
+    color: var(--cyan);
+    letter-spacing: 1px;
+  }
+
+  .sys-status-bar {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    font-size: 12px;
+  }
+
+  .status-pill {
+    padding: 4px 12px;
+    border-radius: 2px;
+    background: rgba(0,0,0,0.5);
+    border: 1px solid var(--border-dim);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: uppercase;
+    font-weight: bold;
+  }
+
+  .dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-muted);
+  }
+
+  .dot.active {
+    background: var(--green);
+    box-shadow: 0 0 10px var(--green);
+    animation: pulse 1.5s infinite;
+  }
+
+  .dot.alert {
+    background: var(--magenta);
+    box-shadow: 0 0 10px var(--magenta);
+    animation: pulse 0.8s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(1.1); }
+  }
+
+  /* Grid Container */
+  .container {
+    max-width: 1600px;
+    margin: 0 auto;
+    padding: 20px;
+    display: grid;
+    grid-template-columns: 360px 1fr 380px;
+    gap: 20px;
+  }
+
+  /* Cyber Panels */
+  .panel {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-dim);
+    position: relative;
+    padding: 16px;
+    clip-path: polygon(
+      0 0, 
+      calc(100% - 12px) 0, 
+      100% 12px, 
+      100% 100%, 
+      12px 100%, 
+      0 calc(100% - 12px)
+    );
+    box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.5);
+  }
+
+  .panel::before {
+    content: "";
+    position: absolute;
+    top: 0; right: 0;
+    width: 12px; height: 12px;
+    background: var(--cyan);
+    clip-path: polygon(100% 0, 0 0, 100% 100%);
+  }
+
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--border-dim);
+    padding-bottom: 10px;
+    margin-bottom: 14px;
+  }
+
+  .panel-title {
+    font-family: var(--font-head);
+    font-size: 13px;
+    letter-spacing: 1.5px;
+    color: var(--cyan);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: uppercase;
+  }
+
+  /* Hardware Node Pods */
+  .device-card {
+    background: var(--bg-panel-alt);
+    border: 1px solid var(--border-dim);
+    padding: 14px;
+    margin-bottom: 14px;
+    position: relative;
+    transition: all 0.2s ease;
+  }
+
+  .device-card.connected {
+    border-color: var(--cyan);
+    box-shadow: 0 0 15px rgba(0, 240, 255, 0.15);
+  }
+
+  .device-card.disconnected {
+    border-color: #332228;
+    opacity: 0.8;
+  }
+
+  .device-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 8px;
+  }
+
+  .device-name {
+    font-family: var(--font-ui);
+    font-size: 16px;
+    font-weight: 700;
+    color: #fff;
+    letter-spacing: 0.5px;
+  }
+
+  .device-tag {
+    font-size: 10px;
+    padding: 2px 6px;
+    background: rgba(0, 240, 255, 0.1);
+    color: var(--cyan);
+    border: 1px solid var(--cyan);
+    border-radius: 2px;
+  }
+
+  .device-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .device-meta b {
+    color: var(--text-primary);
+  }
+
+  .port-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    background: #000;
+    border: 1px solid var(--border-dim);
+    color: var(--green);
+    font-weight: bold;
+    font-size: 11px;
+    margin-top: 6px;
+  }
+
+  .btn {
+    background: #111a28;
+    color: var(--cyan);
+    border: 1px solid var(--cyan);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 8px 14px;
+    cursor: pointer;
+    text-transform: uppercase;
+    font-weight: bold;
+    letter-spacing: 1px;
+    transition: all 0.15s ease;
+    clip-path: polygon(6px 0%, 100% 0%, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0% 100%, 0% 6px);
+  }
+
+  .btn:hover {
+    background: var(--cyan);
+    color: #000;
+    box-shadow: 0 0 12px var(--cyan);
+  }
+
+  .btn-magenta {
+    color: var(--magenta);
+    border-color: var(--magenta);
+    background: #250914;
+  }
+  .btn-magenta:hover {
+    background: var(--magenta);
+    color: #fff;
+    box-shadow: 0 0 12px var(--magenta);
+  }
+
+  .btn-amber {
+    color: var(--amber);
+    border-color: var(--amber);
+    background: #241908;
+  }
+  .btn-amber:hover {
+    background: var(--amber);
+    color: #000;
+    box-shadow: 0 0 12px var(--amber);
+  }
+
+  .btn-green {
+    color: var(--green);
+    border-color: var(--green);
+    background: #092015;
+  }
+  .btn-green:hover {
+    background: var(--green);
+    color: #000;
+    box-shadow: 0 0 12px var(--green);
+  }
+
+  .btn-full {
+    width: 100%;
+    margin-top: 8px;
+    padding: 10px;
+  }
+
+  /* Center Stage: Live Telemetry & Pipeline */
+  .center-stage {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* Live Verdict Display */
+  .verdict-hero {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #090e17;
+    border: 2px solid var(--border-dim);
+    padding: 18px 24px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .verdict-hero.ACCEPT {
+    border-color: var(--green);
+    box-shadow: 0 0 25px rgba(0, 255, 136, 0.25);
+  }
+
+  .verdict-hero.TAMPER {
+    border-color: var(--magenta);
+    box-shadow: 0 0 25px rgba(255, 0, 85, 0.35);
+  }
+
+  .verdict-hero.REPLAY {
+    border-color: var(--amber);
+    box-shadow: 0 0 25px rgba(255, 170, 0, 0.3);
+  }
+
+  .verdict-hero.FLOOD {
+    border-color: var(--magenta);
+    box-shadow: 0 0 25px rgba(255, 0, 85, 0.4);
+  }
+
+  .verdict-hero.FALSE_DATA {
+    border-color: #ff6600;
+    box-shadow: 0 0 25px rgba(255, 102, 0, 0.35);
+  }
+
+  .verdict-main {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .verdict-badge {
+    font-family: var(--font-head);
+    font-size: 26px;
+    letter-spacing: 3px;
+    font-weight: 900;
+    padding: 6px 18px;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid currentColor;
+  }
+
+  .verdict-hero.ACCEPT .verdict-badge { color: var(--green); }
+  .verdict-hero.TAMPER .verdict-badge { color: var(--magenta); }
+  .verdict-hero.REPLAY .verdict-badge { color: var(--amber); }
+  .verdict-hero.FLOOD .verdict-badge { color: var(--magenta); }
+  .verdict-hero.FALSE_DATA .verdict-badge { color: #ff6600; }
+
+  .verdict-meta {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .verdict-meta b {
+    color: #fff;
+    font-size: 16px;
+  }
+
+  .cycles-display {
+    text-align: right;
+  }
+
+  .cycles-val {
+    font-family: var(--font-head);
+    font-size: 24px;
+    color: var(--cyan);
+    text-shadow: 0 0 8px var(--cyan);
+  }
+
+  .cycles-label {
+    font-size: 11px;
+    color: var(--text-muted);
+    letter-spacing: 1px;
+  }
+
+  /* 4-Stage Security Pipeline */
+  .pipeline-bar {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .pipe-step {
+    background: #090d14;
+    border: 1px solid var(--border-dim);
+    padding: 10px;
+    text-align: center;
+    font-size: 11px;
+    position: relative;
+    transition: all 0.2s ease;
+  }
+
+  .pipe-step.pass {
+    border-color: var(--green);
+    color: var(--green);
+  }
+
+  .pipe-step.drop {
+    border-color: var(--magenta);
+    background: rgba(255, 0, 85, 0.1);
+    color: var(--magenta);
+    box-shadow: 0 0 10px var(--magenta-glow);
+  }
+
+  .pipe-num {
+    font-size: 9px;
+    color: var(--text-muted);
+    margin-bottom: 2px;
+  }
+
+  .pipe-name {
+    font-weight: bold;
+    letter-spacing: 0.5px;
+  }
+
+  /* Wire Packet Dissector */
+  .packet-dissector {
+    background: #05070b;
+    border: 1px solid var(--border-dim);
+    padding: 14px;
+  }
+
+  .raw-hex-display {
+    font-family: var(--font-mono);
+    font-size: 14px;
+    letter-spacing: 3px;
+    padding: 10px;
+    background: #000;
+    border: 1px dashed var(--border-dim);
+    margin-bottom: 12px;
+    word-break: break-all;
+  }
+
+  .raw-hex-display span {
+    padding: 2px 4px;
+    border-radius: 2px;
+    margin: 0 1px;
+  }
+
+  .hex-preamble { color: #fff; background: #333; }
+  .hex-node { color: var(--purple); background: rgba(153, 51, 255, 0.2); }
+  .hex-counter { color: var(--cyan); background: rgba(0, 240, 255, 0.15); }
+  .hex-temp { color: var(--green); background: rgba(0, 255, 136, 0.15); }
+  .hex-hmac { color: var(--amber); background: rgba(255, 170, 0, 0.15); }
+
+  .packet-fields-grid {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 8px;
+    font-size: 11px;
+  }
+
+  .field-card {
+    background: #0c101a;
+    border: 1px solid var(--border-dim);
+    padding: 8px;
+  }
+
+  .field-card .label {
+    color: var(--text-muted);
+    font-size: 10px;
+  }
+
+  .field-card .val {
+    font-size: 14px;
+    color: #fff;
+    font-weight: bold;
+    margin-top: 4px;
+  }
+
+  /* Oscilloscope Canvas */
+  .oscilloscope-box {
+    background: #030508;
+    border: 1px solid var(--border-dim);
+    position: relative;
+    height: 180px;
+    overflow: hidden;
+  }
+
+  canvas#scopeCanvas {
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  .scope-hud {
+    position: absolute;
+    top: 8px;
+    left: 12px;
+    font-size: 11px;
+    color: var(--cyan);
+    pointer-events: none;
+    letter-spacing: 1px;
+  }
+
+  /* Right Sidebar: Attack Console & Stats */
+  .attack-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .attack-btn-card {
+    background: #0c111a;
+    border: 1px solid var(--border-dim);
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .attack-btn-card:hover {
+    border-color: var(--cyan);
+    background: #111824;
+    transform: translateX(4px);
+  }
+
+  .attack-btn-card .at-name {
+    font-family: var(--font-ui);
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  .attack-btn-card .at-desc {
+    font-size: 10px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+
+  /* Detection Scorecard */
+  .scorecard-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+    margin-top: 10px;
+  }
+
+  .scorecard-table th {
+    text-align: left;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-dim);
+    padding: 6px 4px;
+  }
+
+  .scorecard-table td {
+    padding: 6px 4px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+
+  .rate-bar-bg {
+    width: 100%;
+    height: 6px;
+    background: #162030;
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 2px;
+  }
+
+  .rate-bar-fill {
+    height: 100%;
+    background: var(--green);
+    transition: width 0.3s ease;
+  }
+
+  /* Efficiency Meter */
+  .efficiency-box {
+    background: linear-gradient(135deg, #09171e 0%, #060c14 100%);
+    border: 1px solid var(--cyan);
+    padding: 12px;
+    margin-top: 14px;
+    position: relative;
+    box-shadow: 0 0 15px rgba(0, 240, 255, 0.1);
+  }
+
+  .eff-val {
+    font-family: var(--font-head);
+    font-size: 28px;
+    color: var(--green);
+    text-shadow: 0 0 12px var(--green);
+  }
+
+  /* Terminal Log */
+  .terminal-box {
+    background: #020406;
+    border: 1px solid var(--border-dim);
+    height: 190px;
+    overflow-y: auto;
+    padding: 10px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.4;
+    color: #8b9bb4;
+  }
+
+  .log-row {
+    margin-bottom: 2px;
+    display: flex;
+    gap: 10px;
+  }
+
+  .log-row .t-stamp { color: #43546b; min-width: 65px; }
+  .log-row.ACCEPT .t-verdict { color: var(--green); font-weight: bold; }
+  .log-row.TAMPER .t-verdict { color: var(--magenta); font-weight: bold; }
+  .log-row.REPLAY .t-verdict { color: var(--amber); font-weight: bold; }
+  .log-row.FLOOD .t-verdict { color: var(--magenta); font-weight: bold; }
+  .log-row.FALSE_DATA .t-verdict { color: #ff6600; font-weight: bold; }
+
+  /* Utilities */
+  .text-cyan { color: var(--cyan); }
+  .text-green { color: var(--green); }
+  .text-magenta { color: var(--magenta); }
+  .text-amber { color: var(--amber); }
+
+  /* Modal / Progress Overlay */
+  #attackOverlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.85);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  }
+
+  .modal-box {
+    background: var(--bg-panel);
+    border: 2px solid var(--cyan);
+    padding: 30px;
+    width: 480px;
+    text-align: center;
+    box-shadow: 0 0 40px var(--cyan-glow);
+  }
+
+  .progress-outer {
+    height: 14px;
+    background: #000;
+    border: 1px solid var(--cyan);
+    margin: 20px 0;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .progress-inner {
+    height: 100%;
+    width: 0%;
+    background: var(--cyan);
+    box-shadow: 0 0 10px var(--cyan);
+    transition: width 0.1s linear;
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<header>
+  <div class="brand">
+    <div class="logo-icon">&#x26A1;</div>
+    <div>
+      <h1>SECURE-IOT // MISSION CONTROL</h1>
+      <div class="sub">16-BYTE HMAC-SHA256 AUTHENTICATED SENSING &bull; DUAL-NODE EVALUATOR</div>
+    </div>
+  </div>
+
+  <div class="sys-status-bar">
+    <div class="status-pill">
+      <span class="dot active" id="dotSystem"></span>
+      <span id="systemStateText">SYSTEM ARMED</span>
+    </div>
+
+    <div class="status-pill">
+      <span class="dot" id="dotSerial"></span>
+      <span id="serialStateText">DISCONNECTED</span>
+    </div>
+
+    <div class="status-pill">
+      <span id="clockDisplay">00:00:00 UTC</span>
+    </div>
+  </div>
+</header>
+
+<!-- Main Container -->
+<div class="container">
+
+  <!-- LEFT COLUMN: HARDWARE PODS & CONFIG -->
+  <div class="left-col">
+    
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">&#x25C8; HARDWARE BUS SCANNER</div>
+        <button class="btn" id="btnRefreshPorts" style="padding: 4px 8px; font-size: 10px;">SCAN</button>
+      </div>
+
+      <!-- Verifier Node Pod -->
+      <div class="device-card disconnected" id="cardNucleo">
+        <div class="device-head">
+          <div>
+            <div class="device-name">STM32 NUCLEO-L476RG</div>
+            <div class="device-meta">Verifier &bull; ARM Cortex-M4 @ 80 MHz</div>
+          </div>
+          <span class="device-tag" id="tagNucleo">OFFLINE</span>
+        </div>
+        <div class="device-meta">
+          <div>BUS: <b>USART1 (PA10) @ 115200</b></div>
+          <div>DWT CYCCNT: <b>ACTIVE (12.5 ns/cyc)</b></div>
+          <div>CRYPTO: <b>HMAC-SHA256 (64-bit tag)</b></div>
+          <div>RATE LIMIT: <b id="lblRateLimit">5 PKT/S</b></div>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+          <span class="port-badge" id="portNucleo">PORT: NONE</span>
+          <button class="btn btn-green" id="btnConnectNucleo" style="padding: 4px 10px; font-size: 11px;">CONNECT</button>
+        </div>
+      </div>
+
+      <!-- Sensor Node Pod -->
+      <div class="device-card disconnected" id="cardNano">
+        <div class="device-head">
+          <div>
+            <div class="device-name">ARDUINO NANO (CH340)</div>
+            <div class="device-meta">Sensor Node &bull; ATmega328P @ 16 MHz</div>
+          </div>
+          <span class="device-tag" id="tagNano">OFFLINE</span>
+        </div>
+        <div class="device-meta">
+          <div>SENSOR: <b>DS18B20 1-Wire (Pin D2)</b></div>
+          <div>RATE: <b>1.0 Hz (1 Packet / Sec)</b></div>
+          <div>PACKET SIZE: <b>16 Bytes Packed</b></div>
+          <div>LINK: <b>D1 (TX) &rarr; Divider &rarr; PA10</b></div>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+          <span class="port-badge" id="portNano">PORT: NONE</span>
+          <span style="font-size:10px; color:var(--text-muted);">STREAMING NODE</span>
+        </div>
+      </div>
+
+      <!-- Manual Connection Selector -->
+      <div style="margin-top: 14px; border-top: 1px dashed var(--border-dim); padding-top: 10px;">
+        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">MANUAL PORT OVERRIDE:</div>
+        <div style="display: flex; gap: 8px;">
+          <select id="portSelect" style="flex:1; background: #000; color: #fff; border: 1px solid var(--border-dim); padding: 6px; font-family: var(--font-mono); font-size: 12px;">
+            <option value="">-- No Ports Detected --</option>
+          </select>
+          <button class="btn" id="btnManualConnect" style="padding: 6px 12px;">SET</button>
+        </div>
+      </div>
+
+      <!-- Admin Commands -->
+      <div style="margin-top: 16px;">
+        <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">VERIFIER CONTROL SIGNALS:</div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <button class="btn btn-amber" id="btnResetVerifier" style="font-size: 10px; padding: 6px;">&#x21BA; RESET STATE</button>
+          <button class="btn" id="btnToggleRateLimit" style="font-size: 10px; padding: 6px;">&#x1F6E1; RATE LIMIT</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Cycle Savings Widget -->
+    <div class="panel" style="margin-top: 20px;">
+      <div class="panel-header">
+        <div class="panel-title">&#x26A1; CPU ENERGY REDUCTION</div>
+      </div>
+      <div class="efficiency-box">
+        <div style="font-size: 11px; color: var(--text-muted);">FLOOD PRE-CRYPTO REDUCTION:</div>
+        <div class="eff-val" id="valEffSavings">99.56%</div>
+        <div style="font-size: 11px; color: var(--text-primary); margin-top: 4px;">
+          Saved <b id="valCyclesSaved">22,808</b> cycles per flood frame
+        </div>
+        <div class="rate-bar-bg" style="height: 8px; margin-top: 8px;">
+          <div class="rate-bar-fill" id="barSavings" style="width: 99.56%; background: var(--green);"></div>
+        </div>
+      </div>
+
+      <div style="margin-top: 14px; font-size: 11px; line-height: 1.6; color: var(--text-muted);">
+        <div>&bull; Isolated Crypto: <b class="text-cyan">~22,909 cycles</b> (286 &mu;s)</div>
+        <div>&bull; Pre-Crypto Drop: <b class="text-green">~101 cycles</b> (1.26 &mu;s)</div>
+        <div>&bull; Denial-of-Service CPU Protection: <b class="text-green">ACTIVE</b></div>
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- CENTER COLUMN: TELEMETRY, PIPELINE, OSCILLOSCOPE -->
+  <div class="center-stage">
+
+    <!-- Active Verdict Hero -->
+    <div class="verdict-hero ACCEPT" id="verdictHero">
+      <div class="verdict-main">
+        <div class="verdict-badge" id="verdictBadge">ACCEPT</div>
+        <div class="verdict-meta">
+          <div>COUNTER: <b id="heroCounter">#0</b></div>
+          <div>TEMPERATURE: <b id="heroTemp">--.- &deg;C</b></div>
+          <div id="heroReason" style="font-size: 11px; color: var(--cyan);">LEGITIMATE AUTHENTICATED PACKET</div>
+        </div>
+      </div>
+
+      <div class="cycles-display">
+        <div class="cycles-val" id="heroCycles">0</div>
+        <div class="cycles-label">DWT CYCLES (80MHz)</div>
+        <div style="font-size: 11px; color: var(--cyan); margin-top: 2px;" id="heroLatency">0.0 &mu;s</div>
+      </div>
+    </div>
+
+    <!-- 4-Stage Security Verification Pipeline -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">&#x2694; 4-STAGE INLINE VERIFICATION PIPELINE</div>
+        <span style="font-size: 10px; color: var(--text-muted);">CLOCK CYCLE AUDIT</span>
+      </div>
+
+      <div class="pipeline-bar">
+        <div class="pipe-step pass" id="stepRateLimit">
+          <div class="pipe-num">STAGE 01</div>
+          <div class="pipe-name">RATE LIMITER</div>
+          <div style="font-size: 9px; margin-top: 3px;" id="subRateLimit">&le; 5 PKT/SEC</div>
+        </div>
+
+        <div class="pipe-step pass" id="stepHmac">
+          <div class="pipe-num">STAGE 02</div>
+          <div class="pipe-name">HMAC-SHA256</div>
+          <div style="font-size: 9px; margin-top: 3px;" id="subHmac">64-BIT TAG</div>
+        </div>
+
+        <div class="pipe-step pass" id="stepCounter">
+          <div class="pipe-num">STAGE 03</div>
+          <div class="pipe-name">COUNTER WINDOW</div>
+          <div style="font-size: 9px; margin-top: 3px;" id="subCounter">MONOTONIC FRESH</div>
+        </div>
+
+        <div class="pipe-step pass" id="stepPlausibility">
+          <div class="pipe-num">STAGE 04</div>
+          <div class="pipe-name">PLAUSIBILITY</div>
+          <div style="font-size: 9px; margin-top: 3px;" id="subPlausibility">&Delta;T &le; 5&deg;C/s</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Wire Packet Anatomy Dissector -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">&#x25C9; WIRE PACKET ANATOMY (16 BYTES PACKED)</div>
+        <span style="font-size: 11px; color: var(--cyan);" id="lblPktIndex">FRAME #0</span>
+      </div>
+
+      <div class="packet-dissector">
+        <div class="raw-hex-display" id="rawHexBox">
+          <span class="hex-preamble">AA</span>
+          <span class="hex-node">01</span>
+          <span class="hex-counter">00 00 00 01</span>
+          <span class="hex-temp">09 60</span>
+          <span class="hex-hmac">55 F1 53 AD 68 3E 8D 76</span>
+        </div>
+
+        <div class="packet-fields-grid">
+          <div class="field-card">
+            <div class="label">PREAMBLE (1B)</div>
+            <div class="val text-cyan" id="valPreamble">0xAA</div>
+          </div>
+          <div class="field-card">
+            <div class="label">NODE ID (1B)</div>
+            <div class="val" style="color:var(--purple);" id="valNodeId">0x01</div>
+          </div>
+          <div class="field-card">
+            <div class="label">COUNTER (4B BE)</div>
+            <div class="val text-cyan" id="valCounter">1</div>
+          </div>
+          <div class="field-card">
+            <div class="label">RAW TEMP (2B)</div>
+            <div class="val text-green" id="valTemp">24.00 &deg;C</div>
+          </div>
+          <div class="field-card">
+            <div class="label">HMAC TAG (8B)</div>
+            <div class="val text-amber" style="font-size:11px;" id="valHmacTag">55F153AD...</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Real-time Thermal Oscilloscope -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">&#x223F; THERMAL OSCILLOSCOPE TRAJECTORY</div>
+        <span style="font-size: 11px; color: var(--green);" id="lblScopeStatus">SCANNING 100ms/DIV</span>
+      </div>
+
+      <div class="oscilloscope-box">
+        <canvas id="scopeCanvas"></canvas>
+        <div class="scope-hud">
+          <div>CH1: TEMPERATURE (&deg;C) &bull; BOUNDS: [-10.0, +85.0]</div>
+          <div>GREEN: ACCEPTED &bull; RED: ATTACK REJECTED</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scrolling Terminal Log -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">&#x25A4; LIVE VERIFICATION EVENT STREAM</div>
+        <div style="display:flex; gap:6px;">
+          <button class="btn" id="btnClearLog" style="padding: 2px 8px; font-size: 10px;">CLEAR</button>
+          <button class="btn" id="btnExportCsv" style="padding: 2px 8px; font-size: 10px;">EXPORT CSV</button>
+        </div>
+      </div>
+
+      <div class="terminal-box" id="terminalLog">
+        <div class="log-row ACCEPT">
+          <span class="t-stamp">[BOOT]</span>
+          <span class="t-verdict">SYSTEM ONLINE</span>
+          <span>Waiting for serial connection to Verifier Node...</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+
+  <!-- RIGHT COLUMN: ATTACK INJECTION & BENCHMARK SCORECARD -->
+  <div class="right-col">
+
+    <!-- Attack Launcher Console -->
+    <div class="panel">
+      <div class="panel-header">
+        <div class="panel-title">&#x26A0; ATTACK INJECTION CONSOLE</div>
+        <span style="font-size: 10px; color: var(--magenta);">LIVE ADVERSARY</span>
+      </div>
+
+      <div class="attack-grid">
+        <!-- 1. Clean Baseline -->
+        <div class="attack-btn-card" onclick="triggerAttack('clean', 10)">
+          <div>
+            <div class="at-name text-green">&#x26A1; CLEAN BASELINE</div>
+            <div class="at-desc">Injects 10 legitimate authenticated packets</div>
+          </div>
+          <button class="btn btn-green" style="font-size: 10px; padding: 4px 8px;">FIRE &times;10</button>
+        </div>
+
+        <!-- 2. Tamper Tag -->
+        <div class="attack-btn-card" onclick="triggerAttack('tamper', 10)">
+          <div>
+            <div class="at-name text-magenta">&#x2620; HMAC TAMPER (1-BIT)</div>
+            <div class="at-desc">Corrupts 1-bit in truncated 64-bit HMAC tag</div>
+          </div>
+          <button class="btn btn-magenta" style="font-size: 10px; padding: 4px 8px;">FIRE &times;10</button>
+        </div>
+
+        <!-- 3. Replay Attack -->
+        <div class="attack-btn-card" onclick="triggerAttack('replay', 10)">
+          <div>
+            <div class="at-name text-amber">&#x21BA; REPLAY ATTACK</div>
+            <div class="at-desc">Resends stale counters to break freshness</div>
+          </div>
+          <button class="btn btn-amber" style="font-size: 10px; padding: 4px 8px;">FIRE &times;10</button>
+        </div>
+
+        <!-- 4. False-Data -->
+        <div class="attack-btn-card" onclick="triggerAttack('false_data', 10)">
+          <div>
+            <div class="at-name" style="color: #ff6600;">&#x1F321; FALSE-DATA INJECTION</div>
+            <div class="at-desc">Spikes 95&deg;C or impossible 15&deg;C/s thermal jump</div>
+          </div>
+          <button class="btn" style="color:#ff6600; border-color:#ff6600; font-size:10px; padding:4px 8px;">FIRE &times;10</button>
+        </div>
+
+        <!-- 5. Flood DoS -->
+        <div class="attack-btn-card" onclick="triggerAttack('flood', 50)">
+          <div>
+            <div class="at-name text-magenta">&#x1F30A; FLOOD DoS BURST</div>
+            <div class="at-desc">Fires 50 frames @ 200 pkt/s to trigger rate drop</div>
+          </div>
+          <button class="btn btn-magenta" style="font-size: 10px; padding: 4px 8px;">BURST &times;50</button>
+        </div>
+      </div>
+
+      <div style="margin-top: 14px; border-top: 1px dashed var(--border-dim); padding-top: 10px;">
+        <button class="btn btn-full" id="btnRunBenchmark" onclick="triggerBenchmark(100)">
+          &#x1F680; RUN FULL BENCHMARK (100 TRIALS EACH)
+        </button>
+      </div>
+    </div>
+
+
+    <!-- Detection Accuracy Scorecard -->
+    <div class="panel" style="margin-top: 20px;">
+      <div class="panel-header">
+        <div class="panel-title">&#x1F4CA; DEFENSE ACCURACY SCORECARD</div>
+        <button class="btn" id="btnResetStats" style="padding: 2px 6px; font-size: 10px;">RESET</button>
+      </div>
+
+      <table class="scorecard-table">
+        <thead>
+          <tr>
+            <th>VECTOR</th>
+            <th>TESTED</th>
+            <th>DEFENDED</th>
+            <th>ACCURACY</th>
+          </tr>
+        </thead>
+        <tbody id="scorecardBody">
+          <tr>
+            <td class="text-green">CLEAN (FP)</td>
+            <td id="statCleanTotal">0</td>
+            <td id="statCleanDef">0</td>
+            <td id="statCleanRate">100.0%</td>
+          </tr>
+          <tr>
+            <td class="text-magenta">TAMPER</td>
+            <td id="statTamperTotal">0</td>
+            <td id="statTamperDef">0</td>
+            <td id="statTamperRate">--</td>
+          </tr>
+          <tr>
+            <td class="text-amber">REPLAY</td>
+            <td id="statReplayTotal">0</td>
+            <td id="statReplayDef">0</td>
+            <td id="statReplayRate">--</td>
+          </tr>
+          <tr>
+            <td class="text-magenta">FLOOD</td>
+            <td id="statFloodTotal">0</td>
+            <td id="statFloodDef">0</td>
+            <td id="statFloodRate">--</td>
+          </tr>
+          <tr>
+            <td style="color:#ff6600;">FALSE-DATA</td>
+            <td id="statFalseTotal">0</td>
+            <td id="statFalseDef">0</td>
+            <td id="statFalseRate">--</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="margin-top: 14px; border-top: 1px solid var(--border-dim); padding-top: 10px;">
+        <div style="display:flex; justify-content:space-between; font-size:12px;">
+          <span>OVERALL ACCURACY:</span>
+          <b class="text-green" id="lblOverallAccuracy">100.0%</b>
+        </div>
+        <div style="display:flex; justify-content:space-between; font-size:12px; margin-top:4px;">
+          <span>TOTAL PROCESSED:</span>
+          <b class="text-cyan" id="lblTotalProcessed">0 frames</b>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+
+<!-- Attack Progress Overlay -->
+<div id="attackOverlay">
+  <div class="modal-box">
+    <div style="font-family: var(--font-head); font-size: 18px; color: var(--cyan); letter-spacing: 2px;" id="modalTitle">
+      INJECTING ADVERSARIAL VECTORS...
+    </div>
+    <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px;" id="modalSub">
+      Evaluating cryptographic and physical defenses in real-time
+    </div>
+    <div class="progress-outer">
+      <div class="progress-inner" id="modalProgress"></div>
+    </div>
+    <div style="font-size: 12px; color: #fff; font-family: var(--font-mono);" id="modalCounter">
+      0 / 100
+    </div>
+  </div>
+</div>
+
+
+<!-- Script logic -->
+<script>
+  // --- Global State ---
+  let activePort = "";
+  let stats = {
+    clean_total: 0, clean_def: 0,
+    tamper_total: 0, tamper_def: 0,
+    replay_total: 0, replay_def: 0,
+    flood_total: 0, flood_def: 0,
+    false_total: 0, false_def: 0
+  };
+  let tempHistory = [];
+  let isRateLimitEnabled = true;
+
+  // --- Clock update ---
+  setInterval(() => {
+    const d = new Date();
+    document.getElementById("clockDisplay").textContent = d.toISOString().substring(11, 19) + " UTC";
+  }, 1000);
+
+  // --- Oscilloscope Renderer ---
+  const canvas = document.getElementById("scopeCanvas");
+  const ctx = canvas.getContext("2d");
+
+  function resizeCanvas() {
+    canvas.width = canvas.parentElement.clientWidth;
+    canvas.height = canvas.parentElement.clientHeight;
+  }
+  window.addEventListener("resize", resizeCanvas);
+  resizeCanvas();
+
+  function drawScope() {
+    ctx.fillStyle = "#030508";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw Grid
+    ctx.strokeStyle = "rgba(0, 240, 255, 0.08)";
+    ctx.lineWidth = 1;
+    const gridStep = 25;
+    for (let x = 0; x < canvas.width; x += gridStep) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, canvas.height);
+      ctx.stroke();
+    }
+    for (let y = 0; y < canvas.height; y += gridStep) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(canvas.width, y);
+      ctx.stroke();
+    }
+
+    // Baseline 24.0 C line
+    const zeroY = canvas.height * 0.6;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(0, zeroY);
+    ctx.lineTo(canvas.width, zeroY);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    if (tempHistory.length < 2) {
+      requestAnimationFrame(drawScope);
+      return;
+    }
+
+    // Draw temperature trace
+    ctx.lineWidth = 2;
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = "#00ff88";
+    ctx.strokeStyle = "#00ff88";
+    ctx.beginPath();
+
+    const stepX = canvas.width / Math.max(tempHistory.length - 1, 30);
+    tempHistory.forEach((pt, i) => {
+      const x = i * stepX;
+      // map temp around 24.0 C (+/- 15 C range)
+      const dy = (pt.temp - 24.0) * 8;
+      const y = zeroY - dy;
+
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Draw attack markers
+    tempHistory.forEach((pt, i) => {
+      if (pt.verdict !== "ACCEPT") {
+        const x = i * stepX;
+        const dy = (pt.temp - 24.0) * 8;
+        const y = zeroY - dy;
+        ctx.fillStyle = (pt.verdict === "TAMPER" || pt.verdict === "FLOOD") ? "#ff0055" : "#ffaa00";
+        ctx.beginPath();
+        ctx.arc(x, y, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    });
+
+    requestAnimationFrame(drawScope);
+  }
+  requestAnimationFrame(drawScope);
+
+  // --- API Communications ---
+
+  async function scanPorts() {
+    try {
+      const res = await fetch("/api/ports");
+      const data = await res.json();
+      updateHardwarePods(data);
+    } catch (e) {
+      console.error("Port scan failed:", e);
+    }
+  }
+
+  function updateHardwarePods(data) {
+    const select = document.getElementById("portSelect");
+    select.innerHTML = "";
+
+    // Nucleo card
+    const cardNucleo = document.getElementById("cardNucleo");
+    const tagNucleo = document.getElementById("tagNucleo");
+    const portNucleo = document.getElementById("portNucleo");
+    const btnConnect = document.getElementById("btnConnectNucleo");
+
+    if (data.nucleo) {
+      cardNucleo.classList.remove("disconnected");
+      cardNucleo.classList.add("connected");
+      tagNucleo.textContent = "DETECTED";
+      tagNucleo.style.color = "var(--green)";
+      portNucleo.textContent = "PORT: " + data.nucleo.device;
+      portNucleo.style.borderColor = "var(--green)";
+      
+      if (data.active_port === data.nucleo.device) {
+        tagNucleo.textContent = "ACTIVE LINK";
+        btnConnect.textContent = "DISCONNECT";
+        btnConnect.classList.remove("btn-green");
+        btnConnect.classList.add("btn-magenta");
+      } else {
+        btnConnect.textContent = "CONNECT";
+        btnConnect.classList.remove("btn-magenta");
+        btnConnect.classList.add("btn-green");
+      }
+    } else {
+      cardNucleo.classList.add("disconnected");
+      cardNucleo.classList.remove("connected");
+      tagNucleo.textContent = "SEARCHING...";
+      tagNucleo.style.color = "var(--text-muted)";
+      portNucleo.textContent = "PORT: NONE";
+      btnConnect.textContent = "CONNECT";
+    }
+
+    // Nano card
+    const cardNano = document.getElementById("cardNano");
+    const tagNano = document.getElementById("tagNano");
+    const portNano = document.getElementById("portNano");
+
+    if (data.nano) {
+      cardNano.classList.remove("disconnected");
+      cardNano.classList.add("connected");
+      tagNano.textContent = "DETECTED";
+      tagNano.style.color = "var(--green)";
+      portNano.textContent = "PORT: " + data.nano.device;
+    } else {
+      cardNano.classList.add("disconnected");
+      cardNano.classList.remove("connected");
+      tagNano.textContent = "OFFLINE";
+      tagNano.style.color = "var(--text-muted)";
+      portNano.textContent = "PORT: NONE";
+    }
+
+    // Update select dropdown
+    if (data.all_ports && data.all_ports.length > 0) {
+      data.all_ports.forEach(p => {
+        const opt = document.createElement("option");
+        opt.value = p.device;
+        opt.textContent = `${p.device} - ${p.board_type} (${p.description})`;
+        if (p.device === data.active_port) opt.selected = true;
+        select.appendChild(opt);
+      });
+    } else {
+      const opt = document.createElement("option");
+      opt.textContent = "-- No Serial Ports Detected --";
+      select.appendChild(opt);
+    }
+
+    // Serial state header indicator
+    const dotSerial = document.getElementById("dotSerial");
+    const serialText = document.getElementById("serialStateText");
+    if (data.active_port) {
+      dotSerial.classList.add("active");
+      dotSerial.classList.remove("alert");
+      serialText.textContent = "ONLINE: " + data.active_port;
+      activePort = data.active_port;
+    } else {
+      dotSerial.classList.remove("active");
+      serialText.textContent = "PORT DISCONNECTED";
+      activePort = "";
+    }
+  }
+
+  // --- Connect / Disconnect Handlers ---
+  document.getElementById("btnConnectNucleo").onclick = async () => {
+    if (activePort) {
+      await fetch("/api/disconnect", { method: "POST" });
+    } else {
+      const portVal = document.getElementById("portNucleo").textContent.replace("PORT: ", "");
+      if (portVal && portVal !== "NONE") {
+        await fetch("/api/connect", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ port: portVal })
+        });
+      }
+    }
+    scanPorts();
+  };
+
+  document.getElementById("btnManualConnect").onclick = async () => {
+    const sel = document.getElementById("portSelect").value;
+    if (sel) {
+      await fetch("/api/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ port: sel })
+      });
+      scanPorts();
+    }
+  };
+
+  document.getElementById("btnRefreshPorts").onclick = scanPorts;
+
+  // --- Admin Signals ---
+  document.getElementById("btnResetVerifier").onclick = async () => {
+    await fetch("/api/command", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cmd: "CMD,RESET" })
+    });
+    logEvent("ADMIN", "RESET_SIGNAL", "Verifier counters and rate-window cleared to zero.");
+  };
+
+  document.getElementById("btnToggleRateLimit").onclick = async () => {
+    isRateLimitEnabled = !isRateLimitEnabled;
+    const cmd = isRateLimitEnabled ? "CMD,RATE_LIMIT,1" : "CMD,RATE_LIMIT,0";
+    await fetch("/api/command", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cmd: cmd })
+    });
+    document.getElementById("lblRateLimit").textContent = isRateLimitEnabled ? "5 PKT/S" : "DISABLED";
+    logEvent("ADMIN", "RATE_LIMIT", isRateLimitEnabled ? "Rate limiter re-armed (5 pkt/s)" : "Rate limiter bypassed");
+  };
+
+  // --- SSE Telemetry Stream ---
+  const evtSource = new EventSource("/api/events");
+  evtSource.onmessage = (e) => {
+    try {
+      const data = JSON.parse(e.data);
+      handleLivePacket(data);
+    } catch (err) {
+      console.error("SSE parse error:", err);
+    }
+  };
+
+  function handleLivePacket(pkt) {
+    // 1. Update Hero Display
+    const hero = document.getElementById("verdictHero");
+    hero.className = "verdict-hero " + pkt.verdict;
+    document.getElementById("verdictBadge").textContent = pkt.verdict;
+    document.getElementById("heroCounter").textContent = "#" + pkt.counter;
+    document.getElementById("heroTemp").textContent = pkt.temp.toFixed(2) + " °C";
+    document.getElementById("heroCycles").textContent = pkt.cycles.toLocaleString();
+    const latUs = (pkt.cycles / 80.0).toFixed(2);
+    document.getElementById("heroLatency").textContent = latUs + " µs";
+
+    let reasonMsg = "AUTHENTICATED SENSOR FRAME VALID";
+    if (pkt.verdict === "TAMPER") reasonMsg = "CRITICAL: HMAC-SHA256 MISMATCH (DATA TAMPER DETECTED)";
+    else if (pkt.verdict === "REPLAY") reasonMsg = "WARNING: STALE / DUPLICATE COUNTER DETECTED";
+    else if (pkt.verdict === "FLOOD") reasonMsg = "DoS MITIGATION: PRE-CRYPTO RATE LIMIT EXCEEDED (EARLY EXIT)";
+    else if (pkt.verdict === "FALSE_DATA") reasonMsg = "PHYSICS ANOMALY: SENSOR VALUE EXCEEDS PLAUSIBILITY BOUNDS";
+    document.getElementById("heroReason").textContent = reasonMsg;
+
+    // 2. Update 4-Stage Pipeline Status
+    const sRate = document.getElementById("stepRateLimit");
+    const sHmac = document.getElementById("stepHmac");
+    const sCount = document.getElementById("stepCounter");
+    const sPlaus = document.getElementById("stepPlausibility");
+
+    [sRate, sHmac, sCount, sPlaus].forEach(s => { s.className = "pipe-step pass"; });
+
+    if (pkt.verdict === "FLOOD") {
+      sRate.className = "pipe-step drop";
+    } else if (pkt.verdict === "TAMPER") {
+      sHmac.className = "pipe-step drop";
+    } else if (pkt.verdict === "REPLAY") {
+      sCount.className = "pipe-step drop";
+    } else if (pkt.verdict === "FALSE_DATA") {
+      sPlaus.className = "pipe-step drop";
+    }
+
+    // 3. Update Wire Packet Dissector
+    document.getElementById("valCounter").textContent = pkt.counter;
+    document.getElementById("valTemp").textContent = pkt.temp.toFixed(2) + " °C";
+    if (pkt.hex) {
+      formatHexDisplay(pkt.hex);
+    }
+
+    // 4. Update Oscilloscope
+    tempHistory.push({ temp: pkt.temp, verdict: pkt.verdict });
+    if (tempHistory.length > 50) tempHistory.shift();
+
+    // 5. Update Stats Scorecard
+    updateScorecard(pkt.verdict);
+
+    // 6. Append to Terminal Log
+    logEvent(pkt.verdict, pkt.counter, `${pkt.temp.toFixed(2)} °C | ${pkt.cycles} cycles (${latUs} µs) | ${reasonMsg}`);
+  }
+
+  function formatHexDisplay(hex) {
+    if (hex.length >= 32) {
+      const p = hex.substring(0, 2);
+      const n = hex.substring(2, 4);
+      const c = hex.substring(4, 12).match(/.{2}/g).join(" ");
+      const t = hex.substring(12, 16).match(/.{2}/g).join(" ");
+      const h = hex.substring(16, 32).match(/.{2}/g).join(" ");
+
+      document.getElementById("rawHexBox").innerHTML = `
+        <span class="hex-preamble">${p}</span>
+        <span class="hex-node">${n}</span>
+        <span class="hex-counter">${c}</span>
+        <span class="hex-temp">${t}</span>
+        <span class="hex-hmac">${h}</span>
+      `;
+      document.getElementById("valHmacTag").textContent = hex.substring(16, 26).toUpperCase() + "...";
+    }
+  }
+
+  function updateScorecard(verdict) {
+    if (verdict === "ACCEPT") {
+      stats.clean_total++;
+      stats.clean_def++;
+    } else if (verdict === "TAMPER") {
+      stats.tamper_total++;
+      stats.tamper_def++;
+    } else if (verdict === "REPLAY") {
+      stats.replay_total++;
+      stats.replay_def++;
+    } else if (verdict === "FLOOD") {
+      stats.flood_total++;
+      stats.flood_def++;
+    } else if (verdict === "FALSE_DATA") {
+      stats.false_total++;
+      stats.false_def++;
+    }
+
+    document.getElementById("statCleanTotal").textContent = stats.clean_total;
+    document.getElementById("statCleanDef").textContent = stats.clean_def;
+    document.getElementById("statCleanRate").textContent = stats.clean_total ? "100.0%" : "--";
+
+    document.getElementById("statTamperTotal").textContent = stats.tamper_total;
+    document.getElementById("statTamperDef").textContent = stats.tamper_def;
+    document.getElementById("statTamperRate").textContent = stats.tamper_total ? ((stats.tamper_def / stats.tamper_total) * 100).toFixed(1) + "%" : "--";
+
+    document.getElementById("statReplayTotal").textContent = stats.replay_total;
+    document.getElementById("statReplayDef").textContent = stats.replay_def;
+    document.getElementById("statReplayRate").textContent = stats.replay_total ? ((stats.replay_def / stats.replay_total) * 100).toFixed(1) + "%" : "--";
+
+    document.getElementById("statFloodTotal").textContent = stats.flood_total;
+    document.getElementById("statFloodDef").textContent = stats.flood_def;
+    document.getElementById("statFloodRate").textContent = stats.flood_total ? ((stats.flood_def / stats.flood_total) * 100).toFixed(1) + "%" : "--";
+
+    document.getElementById("statFalseTotal").textContent = stats.false_total;
+    document.getElementById("statFalseDef").textContent = stats.false_def;
+    document.getElementById("statFalseRate").textContent = stats.false_total ? ((stats.false_def / stats.false_total) * 100).toFixed(1) + "%" : "--";
+
+    const total = stats.clean_total + stats.tamper_total + stats.replay_total + stats.flood_total + stats.false_total;
+    document.getElementById("lblTotalProcessed").textContent = total + " frames";
+  }
+
+  function logEvent(verdict, counter, text) {
+    const term = document.getElementById("terminalLog");
+    const row = document.createElement("div");
+    row.className = "log-row " + verdict;
+    const now = new Date().toISOString().substring(14, 23);
+    row.innerHTML = `<span class="t-stamp">[${now}]</span><span class="t-verdict">[${verdict}]</span><span>CTR #${counter} &bull; ${text}</span>`;
+    term.appendChild(row);
+    term.scrollTop = term.scrollHeight;
+  }
+
+  // --- Trigger Attacks ---
+  async function triggerAttack(mode, count) {
+    try {
+      await fetch("/api/attack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: mode, count: count })
+      });
+    } catch (e) {
+      console.error("Attack trigger failed:", e);
+    }
+  }
+
+  async function triggerBenchmark(count) {
+    const overlay = document.getElementById("attackOverlay");
+    overlay.style.display = "flex";
+    document.getElementById("modalTitle").textContent = "EXECUTING 100-TRIAL BENCHMARK SUITE...";
+    document.getElementById("modalCounter").textContent = "Processing vectors across all 5 pipelines...";
+
+    try {
+      await fetch("/api/attack", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "all", count: count })
+      });
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setTimeout(() => {
+        overlay.style.display = "none";
+      }, 1000);
+    }
+  }
+
+  document.getElementById("btnClearLog").onclick = () => {
+    document.getElementById("terminalLog").innerHTML = "";
+  };
+
+  document.getElementById("btnResetStats").onclick = () => {
+    stats = {
+      clean_total: 0, clean_def: 0,
+      tamper_total: 0, tamper_def: 0,
+      replay_total: 0, replay_def: 0,
+      flood_total: 0, flood_def: 0,
+      false_total: 0, false_def: 0
+    };
+    updateScorecard("");
+  };
+
+  // Initial Scan
+  scanPorts();
+  setInterval(scanPorts, 2000);
+</script>
+
+</body>
+</html>
