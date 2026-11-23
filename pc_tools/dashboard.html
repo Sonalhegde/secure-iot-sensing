@@ -546,6 +546,117 @@
     letter-spacing: 1px;
   }
 
+  /* Dedicated Live Thermal Telemetry HUD */
+  .thermal-hud-card {
+    background: linear-gradient(135deg, rgba(13, 25, 42, 0.95) 0%, rgba(8, 14, 24, 0.98) 100%);
+    border: 1px solid rgba(0, 240, 255, 0.35);
+    border-radius: 4px;
+    padding: 16px 20px;
+    box-shadow: 0 0 30px rgba(0, 240, 255, 0.12), inset 0 0 15px rgba(0, 240, 255, 0.05);
+    position: relative;
+    overflow: hidden;
+  }
+  .thermal-hud-card::before {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; width: 5px; height: 100%;
+    background: var(--green);
+    box-shadow: 0 0 12px var(--green);
+  }
+  .thermal-grid {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr;
+    gap: 20px;
+    align-items: center;
+  }
+  .temp-display-hero {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .temp-title-label {
+    font-size: 11px;
+    letter-spacing: 2px;
+    color: var(--text-muted);
+    font-family: var(--font-head);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .temp-digits-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin: 4px 0;
+  }
+  .temp-huge-val {
+    font-size: 54px;
+    font-family: var(--font-head);
+    font-weight: 900;
+    color: var(--green);
+    text-shadow: 0 0 20px rgba(0, 255, 136, 0.7), 0 0 40px rgba(0, 255, 136, 0.3);
+    letter-spacing: -1px;
+    line-height: 1;
+  }
+  .temp-huge-unit {
+    font-size: 26px;
+    font-family: var(--font-head);
+    color: var(--cyan);
+    text-shadow: 0 0 10px var(--cyan);
+  }
+  .temp-alt-units {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 4px;
+  }
+  .thermal-pill {
+    padding: 3px 10px;
+    border-radius: 2px;
+    font-size: 10px;
+    font-weight: bold;
+    letter-spacing: 1px;
+    background: rgba(0, 255, 136, 0.15);
+    border: 1px solid var(--green);
+    color: var(--green);
+    box-shadow: 0 0 8px rgba(0, 255, 136, 0.3);
+  }
+  .thermal-pill.warning {
+    background: rgba(255, 170, 0, 0.15);
+    border-color: var(--amber);
+    color: var(--amber);
+    box-shadow: 0 0 8px rgba(255, 170, 0, 0.3);
+  }
+  .thermal-pill.danger {
+    background: rgba(255, 0, 85, 0.2);
+    border-color: var(--magenta);
+    color: var(--magenta);
+    box-shadow: 0 0 12px rgba(255, 0, 85, 0.5);
+  }
+  .thermal-stats-col {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    background: rgba(0, 0, 0, 0.45);
+    border: 1px solid var(--border-dim);
+    padding: 12px 14px;
+    border-radius: 3px;
+  }
+  .thermal-stat-box {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .thermal-stat-box .s-lbl {
+    font-size: 10px;
+    color: var(--text-muted);
+  }
+  .thermal-stat-box .s-val {
+    font-size: 14px;
+    font-weight: bold;
+    color: var(--text-primary);
+  }
+
   /* Right Sidebar: Attack Console & Stats */
   .attack-grid {
     display: flex;
@@ -838,6 +949,45 @@
 
   <!-- CENTER COLUMN: TELEMETRY, PIPELINE, OSCILLOSCOPE -->
   <div class="center-stage">
+
+    <!-- PROMINENT LIVE THERMAL TELEMETRY HUD GAUGE -->
+    <div class="thermal-hud-card">
+      <div class="thermal-grid">
+        <div class="temp-display-hero">
+          <div class="temp-title-label">
+            <span>&#x1F321; LIVE PHYSICAL SENSOR TELEMETRY</span>
+            <span style="color:var(--cyan); font-size:10px;">[DS18B20 &bull; D2 &bull; 10-BIT]</span>
+          </div>
+          <div class="temp-digits-row">
+            <span class="temp-huge-val" id="liveTempDigits">--.-</span>
+            <span class="temp-huge-unit">&deg;C</span>
+          </div>
+          <div class="temp-alt-units">
+            <span class="thermal-pill" id="tempStatusPill">OPTIMAL ROOM ENVELOPE</span>
+            <span style="font-size:12px; color:var(--text-muted);" id="tempFahrenheit">--.- &deg;F</span>
+          </div>
+        </div>
+
+        <div class="thermal-stats-col">
+          <div class="thermal-stat-box">
+            <span class="s-lbl">MIN OBSERVED</span>
+            <span class="s-val text-cyan" id="minTempRecorded">--.- &deg;C</span>
+          </div>
+          <div class="thermal-stat-box">
+            <span class="s-lbl">MAX OBSERVED</span>
+            <span class="s-val text-amber" id="maxTempRecorded">--.- &deg;C</span>
+          </div>
+          <div class="thermal-stat-box">
+            <span class="s-lbl">THERMAL RATE (&Delta;T)</span>
+            <span class="s-val text-green" id="deltaTempRate">0.00 &deg;C/s</span>
+          </div>
+          <div class="thermal-stat-box">
+            <span class="s-lbl">PLAUSIBILITY BOUNDS</span>
+            <span class="s-val" style="color:var(--text-muted); font-size:12px;">-10&deg;C &sim; +85&deg;C</span>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Active Verdict Hero -->
     <div class="verdict-hero ACCEPT" id="verdictHero">
@@ -1376,24 +1526,114 @@
     logEvent("ADMIN", "RATE_LIMIT", isRateLimitEnabled ? "Rate limiter re-armed (5 pkt/s)" : "Rate limiter bypassed");
   };
 
+  // --- Temperature Metrics State ---
+  let minObservedTemp = 999.0;
+  let maxObservedTemp = -999.0;
+  let prevTempSample = null;
+  let lastPacketCounter = -1;
+
   // --- SSE Telemetry Stream ---
   const evtSource = new EventSource("/api/events");
   evtSource.onmessage = (e) => {
     try {
       const data = JSON.parse(e.data);
-      handleLivePacket(data);
+      if (data && data.counter !== undefined) {
+        handleLivePacket(data);
+      }
     } catch (err) {
       console.error("SSE parse error:", err);
     }
   };
 
+  // --- High-Reliability Polling Engine (every 500ms fallback) ---
+  async function pollStatus() {
+    try {
+      const res = await fetch("/api/status");
+      if (res.ok) {
+        const data = await res.json();
+        
+        // Update port connection indicator
+        if (data.active_port) {
+          const dSer = document.getElementById("dotSerial");
+          const sText = document.getElementById("serialStateText");
+          if (dSer) dSer.className = "dot active";
+          if (sText) sText.textContent = "ONLINE: " + data.active_port;
+        }
+
+        // Process latest packet if fresh
+        if (data.latest_packet && data.latest_packet.counter !== undefined) {
+          if (data.latest_packet.counter !== lastPacketCounter) {
+            handleLivePacket(data.latest_packet);
+          }
+        }
+
+        // Populate history if oscilloscope is empty
+        if (tempHistory.length === 0 && data.history && data.history.length > 0) {
+          data.history.forEach(item => {
+            tempHistory.push({ temp: item.temp, verdict: item.verdict });
+          });
+        }
+      }
+    } catch (e) {
+      // transient network wait
+    }
+  }
+  setInterval(pollStatus, 500);
+
   function handleLivePacket(pkt) {
+    if (!pkt || pkt.temp === undefined) return;
+    lastPacketCounter = pkt.counter;
+
+    const tVal = Number(pkt.temp);
+    const tStr = tVal.toFixed(2);
+    const fStr = (tVal * 1.8 + 32).toFixed(1);
+
+    // Update Big Glowing Thermal HUD
+    const liveDigits = document.getElementById("liveTempDigits");
+    if (liveDigits) liveDigits.textContent = tStr;
+
+    const fElem = document.getElementById("tempFahrenheit");
+    if (fElem) fElem.textContent = fStr + " °F";
+
+    // Track min / max
+    if (tVal > -50 && tVal < 150) {
+      if (tVal < minObservedTemp) minObservedTemp = tVal;
+      if (tVal > maxObservedTemp) maxObservedTemp = tVal;
+      document.getElementById("minTempRecorded").textContent = minObservedTemp.toFixed(2) + " °C";
+      document.getElementById("maxTempRecorded").textContent = maxObservedTemp.toFixed(2) + " °C";
+    }
+
+    // Thermal rate calculation
+    if (prevTempSample !== null) {
+      const delta = Math.abs(tVal - prevTempSample);
+      document.getElementById("deltaTempRate").textContent = delta.toFixed(2) + " °C/s";
+    }
+    prevTempSample = tVal;
+
+    // Thermal Status Pill
+    const pill = document.getElementById("tempStatusPill");
+    if (pill) {
+      if (tVal >= 20.0 && tVal <= 30.0) {
+        pill.className = "thermal-pill";
+        pill.textContent = "OPTIMAL ROOM ENVELOPE";
+      } else if (tVal > 30.0 && tVal <= 50.0) {
+        pill.className = "thermal-pill warning";
+        pill.textContent = "ELEVATED TEMPERATURE";
+      } else if (tVal > 50.0) {
+        pill.className = "thermal-pill danger";
+        pill.textContent = "HIGH THERMAL ALARM";
+      } else {
+        pill.className = "thermal-pill warning";
+        pill.textContent = "SUB-ROOM TEMPERATURE";
+      }
+    }
+
     // 1. Update Hero Display
     const hero = document.getElementById("verdictHero");
     hero.className = "verdict-hero " + pkt.verdict;
     document.getElementById("verdictBadge").textContent = pkt.verdict;
     document.getElementById("heroCounter").textContent = "#" + pkt.counter;
-    document.getElementById("heroTemp").textContent = pkt.temp.toFixed(2) + " °C";
+    document.getElementById("heroTemp").textContent = tStr + " °C";
     document.getElementById("heroCycles").textContent = pkt.cycles.toLocaleString();
     const latUs = (pkt.cycles / 80.0).toFixed(2);
     document.getElementById("heroLatency").textContent = latUs + " µs";
@@ -1425,20 +1665,20 @@
 
     // 3. Update Wire Packet Dissector
     document.getElementById("valCounter").textContent = pkt.counter;
-    document.getElementById("valTemp").textContent = pkt.temp.toFixed(2) + " °C";
+    document.getElementById("valTemp").textContent = tStr + " °C";
     if (pkt.hex) {
       formatHexDisplay(pkt.hex);
     }
 
     // 4. Update Oscilloscope
-    tempHistory.push({ temp: pkt.temp, verdict: pkt.verdict });
+    tempHistory.push({ temp: tVal, verdict: pkt.verdict });
     if (tempHistory.length > 50) tempHistory.shift();
 
     // 5. Update Stats Scorecard
     updateScorecard(pkt.verdict);
 
     // 6. Append to Terminal Log
-    logEvent(pkt.verdict, pkt.counter, `${pkt.temp.toFixed(2)} °C | ${pkt.cycles} cycles (${latUs} µs) | ${reasonMsg}`);
+    logEvent(pkt.verdict, pkt.counter, `${tStr} °C | ${pkt.cycles} cycles (${latUs} µs) | ${reasonMsg}`);
   }
 
   function formatHexDisplay(hex) {

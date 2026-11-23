@@ -230,6 +230,13 @@ void loop() {
             if (b == PROTOCOL_PREAMBLE) {
                 nano_rx_buffer[0] = b;
                 nano_rx_index = 1;
+            } else {
+                // Debug line to help verify wire connection
+                static uint32_t discarded = 0;
+                if (++discarded % 20 == 1) {
+                    Serial.print(F("# NANO_UART_BYTE: 0x"));
+                    Serial.println(b, HEX);
+                }
             }
         } else {
             nano_rx_buffer[nano_rx_index++] = b;

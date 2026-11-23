@@ -37,6 +37,8 @@ active_port_name = None
 serial_lock = threading.Lock()
 sse_clients = []
 sse_lock = threading.Lock()
+packet_history = []
+history_lock = threading.Lock()
 
 current_stats = {
     "clean_total": 0, "clean_def": 0,
@@ -50,9 +52,10 @@ current_stats = {
 latest_packet = {
     "verdict": "IDLE",
     "counter": 0,
-    "temp": 24.0,
+    "temp": 26.5,
     "cycles": 0,
-    "hex": "AA0100000001096055F153AD683E8D76"
+    "hex": "AA01000000010A5A898C29A9322FDBA0",
+    "timestamp": time.time()
 }
 
 
@@ -144,14 +147,45 @@ def send_verifier_command(cmd_str):
                 print(f"[!] Error sending command '{cmd_str}': {e}")
     return False
 
+def record_packet_event(event_dict):
+    """Central updater for telemetry state, history, and broadcasts."""
+    event_dict["timestamp"] = time.time()
+    latest_packet.update(event_dict)
+
+    verdict = event_dict.get("verdict", "ACCEPT")
+    if verdict == "ACCEPT":
+        current_stats["clean_total"] += 1
+        current_stats["clean_def"] += 1
+    elif verdict == "TAMPER":
+        current_stats["tamper_total"] += 1
+        current_stats["tamper_def"] += 1
+    elif verdict == "REPLAY":
+        current_stats["replay_total"] += 1
+        current_stats["replay_def"] += 1
+    elif verdict == "FLOOD":
+        current_stats["flood_total"] += 1
+        current_stats["flood_def"] += 1
+    elif verdict == "FALSE_DATA":
+        current_stats["false_total"] += 1
+        current_stats["false_def"] += 1
+    current_stats["total_processed"] += 1
+
+    with history_lock:
+        packet_history.append(event_dict)
+        if len(packet_history) > 60:
+            packet_history.pop(0)
+
+    broadcast_event(event_dict)
+
+
 def serial_worker(port_name):
     """Continuous background worker reading frames from the Nucleo/Nano."""
     global active_serial, active_port_name
 
     print(f"[*] Opening serial link to {port_name} @ {BAUD_RATE} baud...")
     try:
-        ser = serial.Serial(port_name, baudrate=BAUD_RATE, timeout=0.5)
-        time.sleep(1.5)  # Allow board reset to settle
+        ser = serial.Serial(port_name, baudrate=BAUD_RATE, timeout=0.3)
+        time.sleep(1.0)  # Allow board reset to settle
         ser.reset_input_buffer()
         ser.reset_output_buffer()
         
@@ -160,9 +194,12 @@ def serial_worker(port_name):
             active_port_name = port_name
 
         print(f"[+] Serial Link established on {port_name}!")
-        # Re-arm rate limiting and reset state cleanly
-        send_verifier_command("CMD,RESET")
-        send_verifier_command("CMD,RATE_LIMIT,1")
+        # If this is Nucleo, re-arm rate limiting and reset state cleanly
+        try:
+            ser.write(b"CMD,RESET\nCMD,RATE_LIMIT,1\n")
+            ser.flush()
+        except Exception:
+            pass
 
     except Exception as e:
         print(f"[-] Failed to open {port_name}: {e}")
@@ -172,45 +209,99 @@ def serial_worker(port_name):
         return
 
     current_hex_cache = ""
+    raw_binary_buf = b""
 
-    while True:
-        with serial_lock:
-            if not active_serial or not active_serial.is_open:
-                break
+    try:
+        while True:
+            # Check if port is still open
+            with serial_lock:
+                if not active_serial or not active_serial.is_open or active_serial != ser:
+                    break
+
             try:
-                line = active_serial.readline().decode("utf-8", errors="ignore").strip()
-            except Exception:
+                # Try reading available data
+                chunk = ser.read(128)
+            except Exception as e:
+                print(f"[!] Serial read error on {port_name}: {e}")
                 break
 
-        if not line:
-            continue
+            if not chunk:
+                continue
 
-        # Format 1: HEX,a01... (Raw wire frame)
-        if line.startswith("HEX,"):
-            current_hex_cache = line.split(",")[1].strip()
+            raw_binary_buf += chunk
 
-        # Format 2: LOG,reason,counter,temp,cycles
-        elif line.startswith("LOG,"):
-            parts = line.split(",")
-            if len(parts) >= 5:
+            # Mode A: Text stream from STM32 Nucleo (lines separated by \n)
+            while b"\n" in raw_binary_buf:
+                line_bytes, raw_binary_buf = raw_binary_buf.split(b"\n", 1)
+                line = line_bytes.decode("utf-8", errors="ignore").strip()
+
+                if not line:
+                    continue
+
+                if line.startswith("HEX,"):
+                    current_hex_cache = line.split(",")[1].strip()
+                    latest_packet["hex"] = current_hex_cache
+                    with history_lock:
+                        if packet_history:
+                            packet_history[-1]["hex"] = current_hex_cache
+
+                elif line.startswith("LOG,"):
+                    parts = line.split(",")
+                    if len(parts) >= 5:
+                        try:
+                            reason = parts[1]
+                            counter = int(parts[2])
+                            temp = float(parts[3])
+                            cycles = int(parts[4])
+
+                            packet_event = {
+                                "verdict": reason,
+                                "counter": counter,
+                                "temp": temp,
+                                "cycles": cycles,
+                                "hex": current_hex_cache if current_hex_cache else "AA0100000001096055F153AD683E8D76"
+                            }
+                            record_packet_event(packet_event)
+                            current_hex_cache = ""
+                        except ValueError:
+                            pass
+
+            # Mode B: Fallback raw binary stream (if user directly connects to Nano on COM3)
+            if b"LOG," not in raw_binary_buf and len(raw_binary_buf) >= 16:
+                idx = raw_binary_buf.find(b"\xaa\x01")
+                if idx != -1:
+                    if idx > 0:
+                        raw_binary_buf = raw_binary_buf[idx:]
+                    if len(raw_binary_buf) >= 16:
+                        frame = raw_binary_buf[:16]
+                        raw_binary_buf = raw_binary_buf[16:]
+                        try:
+                            counter = int.from_bytes(frame[2:6], "big")
+                            t_raw = int.from_bytes(frame[6:8], "big", signed=True)
+                            temp_c = t_raw / 100.0
+                            packet_event = {
+                                "verdict": "ACCEPT",
+                                "counter": counter,
+                                "temp": temp_c,
+                                "cycles": 23120,
+                                "hex": frame.hex().upper()
+                            }
+                            record_packet_event(packet_event)
+                        except Exception:
+                            pass
+                elif len(raw_binary_buf) > 100:
+                    raw_binary_buf = raw_binary_buf[-16:]
+
+    finally:
+        print(f"[*] Serial worker for {port_name} stopped.")
+        with serial_lock:
+            if active_serial == ser:
                 try:
-                    reason = parts[1]
-                    counter = int(parts[2])
-                    temp = float(parts[3])
-                    cycles = int(parts[4])
-
-                    packet_event = {
-                        "verdict": reason,
-                        "counter": counter,
-                        "temp": temp,
-                        "cycles": cycles,
-                        "hex": current_hex_cache if current_hex_cache else "AA0100000001096055F153AD683E8D76"
-                    }
-                    latest_packet.update(packet_event)
-                    broadcast_event(packet_event)
-                    current_hex_cache = ""
-                except ValueError:
+                    ser.close()
+                except Exception:
                     pass
+                active_serial = None
+                active_port_name = None
 
 
 def connect_port(port_name):
@@ -248,80 +339,75 @@ def run_attack_task(mode, count):
     print(f"[*] Attacker Thread: Mode '{mode}', Count {count}...")
 
     if mode == "clean":
-        send_verifier_command("CMD,RESET")
         send_verifier_command("CMD,RATE_LIMIT,0")
-        base_ctr = 1000
+        current_temp = latest_packet.get("temp", 26.0)
+        current_ctr = latest_packet.get("counter", 10000)
+        base_ctr = current_ctr + 500
         for i in range(count):
             base_ctr += 1
-            sim_temp = 23.0 + 0.001 * i
-            pkt = build_packet(PROTOCOL_DEFAULT_NODE_ID, base_ctr, sim_temp)
+            pkt = build_packet(PROTOCOL_DEFAULT_NODE_ID, base_ctr, current_temp)
             with serial_lock:
                 if active_serial and active_serial.is_open:
                     active_serial.write(pkt)
-            time.sleep(0.015)
+            time.sleep(0.02)
         send_verifier_command("CMD,RATE_LIMIT,1")
 
     elif mode == "tamper":
         send_verifier_command("CMD,RATE_LIMIT,0")
-        base_ctr = 50000
+        current_temp = latest_packet.get("temp", 26.0)
+        current_ctr = latest_packet.get("counter", 10000)
+        base_ctr = current_ctr + 1000
         for i in range(count):
             base_ctr += 1
-            pkt = bytearray(build_packet(PROTOCOL_DEFAULT_NODE_ID, base_ctr, 24.5))
+            pkt = bytearray(build_packet(PROTOCOL_DEFAULT_NODE_ID, base_ctr, current_temp))
             # Corrupt byte in HMAC tag (bytes 8..15)
             idx = random.randint(8, PROTOCOL_PACKET_SIZE - 1)
             pkt[idx] ^= random.randint(1, 255)
             with serial_lock:
                 if active_serial and active_serial.is_open:
                     active_serial.write(bytes(pkt))
-            time.sleep(0.015)
+            time.sleep(0.02)
         send_verifier_command("CMD,RATE_LIMIT,1")
 
     elif mode == "replay":
         send_verifier_command("CMD,RATE_LIMIT,0")
-        high_ctr = 100000
-        # Seed legitimate baseline
-        legit = build_packet(PROTOCOL_DEFAULT_NODE_ID, high_ctr, 24.0)
-        with serial_lock:
-            if active_serial and active_serial.is_open:
-                active_serial.write(legit)
-        time.sleep(0.05)
-
+        current_temp = latest_packet.get("temp", 26.0)
+        current_ctr = latest_packet.get("counter", 10000)
+        # Replay stale counters that are <= the already accepted current_ctr
         for _ in range(count):
-            stale_ctr = high_ctr - random.randint(1, 1000)
-            pkt = build_packet(PROTOCOL_DEFAULT_NODE_ID, stale_ctr, 24.0)
+            stale_ctr = max(1, current_ctr - random.randint(1, 200))
+            pkt = build_packet(PROTOCOL_DEFAULT_NODE_ID, stale_ctr, current_temp)
             with serial_lock:
                 if active_serial and active_serial.is_open:
                     active_serial.write(pkt)
-            time.sleep(0.015)
+            time.sleep(0.02)
         send_verifier_command("CMD,RATE_LIMIT,1")
 
     elif mode == "false_data":
         send_verifier_command("CMD,RATE_LIMIT,0")
-        ctr = 300000
-        legit = build_packet(PROTOCOL_DEFAULT_NODE_ID, ctr, 24.0)
-        with serial_lock:
-            if active_serial and active_serial.is_open:
-                active_serial.write(legit)
-        time.sleep(0.05)
-
+        current_temp = latest_packet.get("temp", 26.0)
+        current_ctr = latest_packet.get("counter", 10000)
+        ctr = current_ctr + 2000
         for i in range(count):
             ctr += 1
-            spoofed_temp = 95.0 if i % 2 == 0 else (24.0 + 15.0)
+            # Alternate between Out-of-Bounds (>85°C) and sudden thermal shock (+20°C in 20ms)
+            spoofed_temp = 95.0 if i % 2 == 0 else (current_temp + 20.0)
             pkt = build_packet(PROTOCOL_DEFAULT_NODE_ID, ctr, spoofed_temp)
             with serial_lock:
                 if active_serial and active_serial.is_open:
                     active_serial.write(pkt)
-            time.sleep(0.015)
+            time.sleep(0.02)
         send_verifier_command("CMD,RATE_LIMIT,1")
 
     elif mode == "flood":
-        send_verifier_command("CMD,RESET")
         send_verifier_command("CMD,RATE_LIMIT,1")  # Rate limit actively enforced
-        ctr = 200000
+        current_temp = latest_packet.get("temp", 26.0)
+        current_ctr = latest_packet.get("counter", 10000)
+        ctr = current_ctr + 3000
         packets = []
         for _ in range(count):
             ctr += 1
-            packets.append(build_packet(PROTOCOL_DEFAULT_NODE_ID, ctr, 24.0))
+            packets.append(build_packet(PROTOCOL_DEFAULT_NODE_ID, ctr, current_temp))
 
         for pkt in packets:
             with serial_lock:
@@ -384,13 +470,17 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         # 3. Status API
         elif url.path == "/api/status":
+            with history_lock:
+                hist_copy = list(packet_history)
             res = {
                 "active_port": active_port_name,
                 "latest_packet": latest_packet,
-                "stats": current_stats
+                "stats": current_stats,
+                "history": hist_copy
             }
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             self.wfile.write(json.dumps(res).encode("utf-8"))
 
@@ -403,13 +493,23 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
 
+            # Push initial state immediately so client gets data on connect
+            init_msg = f"data: {json.dumps(latest_packet)}\n\n"
+            try:
+                self.wfile.write(init_msg.encode("utf-8"))
+                self.wfile.flush()
+            except Exception:
+                return
+
             with sse_lock:
                 sse_clients.append(self.wfile)
 
-            # Keep connection alive until client disconnects
+            # Keep connection alive with periodic heartbeat
             try:
                 while True:
-                    time.sleep(1.0)
+                    time.sleep(2.0)
+                    self.wfile.write(b": ping\n\n")
+                    self.wfile.flush()
             except Exception:
                 with sse_lock:
                     if self.wfile in sse_clients:

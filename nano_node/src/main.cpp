@@ -12,7 +12,7 @@
 // --- Configuration ---
 // 1 = Normal authenticated operation with real DS18B20 sensor
 // 0 = Synthetic payload generator (use 0 for standalone testing before wiring sensor!)
-#define MODE_REAL_SENSOR        0
+#define MODE_REAL_SENSOR        1
 #define ENABLE_BOOT_BENCHMARK   0   // Set 1 to print ASCII benchmark (disable when connected to Nucleo link)
 
 // --- Setup OneWire and DallasTemperature ---
@@ -33,7 +33,7 @@ void run_hmac_benchmark() {
     hmac_sha256(PRE_SHARED_KEY, sizeof(PRE_SHARED_KEY), sample_payload, sizeof(sample_payload), digest);
 
     unsigned long t_start = micros();
-    const int RUNS = 100;
+    const int RUNS = 5;
     for (int i = 0; i < RUNS; ++i) {
         hmac_sha256(PRE_SHARED_KEY, sizeof(PRE_SHARED_KEY), sample_payload, sizeof(sample_payload), digest);
     }
@@ -66,10 +66,19 @@ void setup() {
     }
     EEPROM.put(EEPROM_COUNTER_ADDR, current_counter);
 
-    // Initialize DS18B20 temperature sensor
+    // Initialize on-board LED for visual TX heartbeat
+    pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, LOW);
+
+#if MODE_REAL_SENSOR
+    // Initialize DS18B20 temperature sensor with external pull-up
     sensors.begin();
+    int count = sensors.getDeviceCount();
+    Serial.print(F("# ONEWIRE_DEVICES_FOUND: "));
+    Serial.println(count);
     sensors.setResolution(10); // 10-bit resolution = ~187.5ms conversion time
     sensors.setWaitForConversion(true);
+#endif
 
     // Run crypto benchmark on startup
     run_hmac_benchmark();
@@ -94,13 +103,18 @@ void loop() {
 
         // Check for sensor disconnect (-127.0 C or DEVICE_DISCONNECTED_C) or hardware fault
         if (temp_c == DEVICE_DISCONNECTED_C || temp_c < -55.0f || temp_c > 125.0f) {
-            // Drop transmission on sensor failure: do not fabricate false readings
+            // Debug: print what the sensor returned so user can diagnose wiring
+            Serial.print(F("# SENSOR_ERR: "));
+            Serial.print(temp_c, 2);
+            Serial.println(F(" C — check DQ wire on D2 and 4.7k pull-up"));
+            digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN)); // still blink so user sees life
             return;
         }
 
         // DS18B20 power-on reset state check (+85.00 C scratchpad default)
         // If 85.0 C occurs as the very first read, wait for valid reading
         if (temp_c == 85.0f && packet_index == 0) {
+            Serial.println(F("# SENSOR_BOOT: 85.0C power-on artifact, waiting..."));
             return;
         }
 
@@ -147,5 +161,8 @@ void loop() {
         // Transmit the 16 bytes over UART (D1 TX -> Voltage Divider -> Nucleo PA10 RX)
         Serial.write((const uint8_t *)&packet, sizeof(packet));
         Serial.flush();
+
+        // Toggle on-board LED to indicate transmission heartbeat
+        digitalWrite(LED_BUILTIN, !digitalRead(LED_BUILTIN));
     }
 }
