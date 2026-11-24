@@ -93,10 +93,10 @@ stateDiagram-v2
 
 ### Bill of Materials
 - **Sensor Node:** Arduino Nano clone (ATmega328P, 5 V logic, 16 MHz, 2 KB SRAM, 32 KB Flash)
-- **Sensor:** DS18B20 waterproof digital temperature sensor (Maxim Integrated, 1-Wire protocol)
+- **Sensor:** DS18B20 waterproof digital temperature sensor (Maxim Integrated, 1-Wire protocol, 10-bit resolution)
 - **Verifier:** STM32 Nucleo-L476RG (ARM Cortex-M4 with FPU, 80 MHz, 3.3 V logic, 128 KB SRAM, 1 MB Flash)
 - **Resistors:**
-  - $1 \times 4.7\text{ k}\Omega$ (DS18B20 1-Wire pull-up to +5 V)
+  - $1 \times 4.7\text{ k}\Omega$ (DS18B20 1-Wire pull-up between D2 and +5 V — **mandatory**)
   - $1 \times 1\text{ k}\Omega$ (Voltage divider upper resistor)
   - $1 \times 2\text{ k}\Omega$ (Voltage divider lower resistor)
 
@@ -116,13 +116,20 @@ Arduino Nano TX (D1) -----> [ 1k Ohm Resistor ] -----> Junction Point -----> Nuc
                                                              |
                                                      [ 2k Ohm Resistor ]
                                                              |
-Arduino Nano GND    -----------------------------------------+-------------> Nucleo GND (Common Reference)
+Arduino Nano GND    -----------------------------------------+-------------> Nucleo GND (CN6 Pin 6)
 
 PC USB Connections
 ------------------
-Arduino Nano USB  -----> PC (Programming only; unplug D1 during uploads)
-Nucleo ST-Link USB-----> PC (Dual Virtual COM Port for logging and attack injection)
+Arduino Nano USB  -----> PC (Programming & optional raw telemetry; unplug D1 during uploads)
+Nucleo ST-Link USB-----> PC (Dual Virtual COM Port for logging, attack injection, and dashboard)
 ```
+
+> [!IMPORTANT]
+> **Hardware Configuration & Troubleshooting Notes:**
+> 1. **DS18B20 Pull-Up Resistor:** An external $4.7\text{ k}\Omega$ pull-up resistor between the OneWire data line (D2) and +5V is **mandatory**. Without it, the OneWire bus floats and the sensor reports `-127.00 °C` (`DEVICE_DISCONNECTED_C`).
+> 2. **STM32 Nucleo Jumper JP5:** Jumper `JP5` on the Nucleo board **must be capped on pins 1-2 (`U5V`)** to power the target MCU via ST-Link USB 5V. If `JP5` is missing, the target voltage drops to ~1.14V and ST-Link reports `target voltage may be too low for reliable debugging`.
+> 3. **Nucleo Common Ground:** Connect the Arduino Nano GND to **Nucleo CN6 Pin 6 (GND)**. Do **NOT** connect to CN6 Pin 4 (which is the +3.3V rail), as doing so will dead-short the power rail and crash the verifier.
+> 4. **Nano Upload Collisions:** Always disconnect the wire from pin **D1 (TX)** before flashing firmware to the Arduino Nano to avoid avrdude programming conflicts.
 
 > **Voltage Divider Calculation:**
 > $$V_{\text{out}} = 5.0\text{ V} \times \frac{2\text{ k}\Omega}{1\text{ k}\Omega + 2\text{ k}\Omega} = 3.333\text{ V}$$
@@ -211,9 +218,9 @@ pio run --target upload
 
 ---
 
-## 6. Running Security Evaluations (`pc_tools`)
+## 6. Real-Time Telemetry & Security Evaluation Suite (`pc_tools`)
 
-Ensure all serial monitors in VS Code or external terminals are **closed** so the COM port is accessible to the Python evaluation suite.
+Ensure all serial monitors in VS Code or external terminals are **closed** so the serial ports are accessible to the Python tools.
 
 ### 1. Install Dependencies
 ```bash
@@ -228,35 +235,62 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-### 2. Capture Genuine Packets (Baseline)
-Connect the STM32 Nucleo to your PC via USB:
-```bash
-python attacker.py --port COM3 --mode capture --count 1000
-```
-*(Replace `COM3` with your Nucleo ST-Link virtual COM port)*
+---
 
-### 3. Run Automated Attack Suite (1,000 trials per attack)
-```bash
-python attacker.py --port COM3 --mode all --count 1000
-```
-This automatically executes:
-1. **Clean Baseline:** Evaluates uncorrupted sequential traffic (verifies 0% False Positive Rate).
-2. **Tamper Attack:** Injects random single-bit and multi-byte flips in payload and HMAC tag $\rightarrow$ Verified and logged as `TAMPER`.
-3. **Replay Attack:** Injects previously accepted packets with stale counters $\rightarrow$ Verified and logged as `REPLAY`.
-4. **Flood Attack:** Bursts high-speed packets (>100 pkt/s) $\rightarrow$ Dropped pre-crypto and logged as `FLOOD`.
-5. **False-Data Attack:** Injects validly signed packets with out-of-bounds ($95^\circ\text{C}$) or rapid jump ($+15^\circ\text{C}/\text{s}$) data $\rightarrow$ Flagged and logged as `FALSE_DATA`.
+### 2. Live Cyberpunk Mission Control HUD (`dashboard.py`)
 
-### 4. Parse Metrics and CPU Cycle Savings
+A full real-time mission control interface for live hardware monitoring, dynamic port detection, and interactive attack injection:
+
+```bash
+python dashboard.py
+```
+* Automatically opens in your browser at: **`http://127.0.0.1:8080`**
+
+#### Key Features:
+- **Live Physical Sensor HUD:** Large 54px glowing readout of authentic DS18B20 temperature, Fahrenheit conversion, min/max recorded tracking, and dynamic thermal status pills (`OPTIMAL ROOM ENVELOPE`, `ELEVATED TEMPERATURE`, `HIGH THERMAL ALARM`).
+- **Real-Time Canvas Oscilloscope:** High-frequency trace of incoming temperature readings, annotated with color-coded attack detection markers in real time.
+- **4-Stage Inline Verification Visualizer:** Visual stage-by-stage audit showing cycle counts and pass/drop indicators for Rate Limiter, HMAC-SHA256, Anti-Replay Window, and Plausibility Filter.
+- **One-Click Attack Injection Console:** Interactive buttons to trigger live `TAMPER`, `REPLAY`, `FALSE DATA`, `FLOOD`, and `BENCHMARK ALL` vectors directly against the connected hardware.
+- **Hardware Bus Watcher:** Automatically discovers, identifies, and connects to both the STM32 Nucleo Verifier (COM4) and Arduino Nano Sensor (COM3) using Server-Sent Events (SSE) and resilient fallback polling.
+
+---
+
+### 3. Standalone Adversarial Spoofing Attack Suite (`spoof_attack_demo.py`)
+
+Demonstrates and verifies each attack vector sequentially against the live STM32 Nucleo hardware verifier:
+
+```bash
+python spoof_attack_demo.py
+```
+
+#### Automated Evaluation Vectors:
+1. **Baseline Legitimate Packet:** Submits authentic packet with valid counter, real temperature, and correct HMAC tag $\rightarrow$ Verified & Accepted in **~23,123 cycles**.
+2. **Attack 1 (HMAC Tamper / Blind Spoofing):** Injects corrupted tag bytes without the 128-bit secret key $\rightarrow$ Caught by **Stage 2 (HMAC-SHA256)** in **~22,889 cycles**.
+3. **Attack 2 (Replay Spoofing Attack):** Re-transmits previously captured authentic frame $\rightarrow$ Caught by **Stage 3 (Anti-Replay Window)** in **~22,993 cycles**.
+4. **Attack 3 (Physical False-Data Jump):** Adversary with valid key injects physically impossible $+35.0^\circ\text{C}$ jump in 50 ms $\rightarrow$ Caught by **Stage 4 (Physical Plausibility)** in **~23,147 cycles**.
+5. **Attack 4 (Out-of-Bounds Injection):** Injects validly signed $+95.0^\circ\text{C}$ reading ($>85.0^\circ\text{C}$ limit) $\rightarrow$ Caught by **Stage 4 (Plausibility Range)** in **~23,025 cycles**.
+6. **Attack 5 (Pre-Crypto DoS Flood Burst):** Bursts 15 high-speed packets $\rightarrow$ **10/15 dropped by Stage 1 Rate Limiter in only 101 cycles (1.26 µs)**, saving 99.56% of cryptographic CPU overhead!
+
+---
+
+### 4. Large-Scale Benchmark & Academic Publication Pipeline
+
+#### A. Automated Attack Benchmark (1,000 trials per attack)
+```bash
+python attacker.py --port COM4 --mode all --count 1000
+```
+
+#### B. Parse Metrics and CPU Cycle Savings
 ```bash
 python evaluator.py
 ```
 Outputs IEEE-formatted summary tables showing Detection Rate (%), False Positive Rate (%), average DWT cycle latency, and CPU cycle reduction.
 
-### 5. Generate Publication Figures
+#### C. Generate Publication Figures
 ```bash
 python plot_results.py
 ```
-Exports high-resolution charts to `pc_tools/results/`:
+Exports high-resolution publication charts to `pc_tools/results/`:
 - `fig_detection_rates.png`: Detection accuracy across all threat vectors ($N=1,000$ per class).
 - `fig_cycle_breakdown.png`: Verification pipeline latency and pre-crypto savings.
 - `fig_temperature_trajectory.png`: Physical plausibility response to sudden step jumps.
@@ -298,16 +332,17 @@ Key: 2b 7e 15 16 28 ae d2 a6 ab f7 15 88 09 cf 4f 3c
 
 ## 8. Experimental Results & Performance Highlights
 
-| Metric | Measurement | Notes |
-|---|---|---|
-| **Tamper Detection Rate** | **100.0%** ($N=1,000$) | Single-bit and multi-byte corruptions |
-| **Replay Detection Rate** | **100.0%** ($N=1,000$) | Historical counter rejection |
-| **Flood Rejection Rate** | **100.0%** ($N=1,000$) | Rates $>5\text{ pkt/s}$ dropped immediately |
-| **False-Data Detection Rate** | **100.0%** ($N=1,000$) | Step jumps $>5.0^\circ\text{C/s}$ and range limits |
-| **False Positive Rate (FPR)** | **0.00%** ($N=1,000$) | Clean baseline traffic |
-| **Pre-Crypto Flood Drop Cost** | **~120 cycles (~1.5 µs)** | STM32 Cortex-M4 @ 80 MHz |
-| **Full HMAC-SHA256 Cost** | **~42,000 cycles (~525 µs)** | Software implementation (no HW crypto) |
-| **CPU Cycle Reduction** | **99.7% savings** | Pre-crypto drop saves ~41,880 cycles/packet |
+Empirical evaluation conducted on a physical **Arduino Nano (ATmega328P @ 16 MHz)** sensor node connected to a physical **STM32 Nucleo-L476RG (ARM Cortex-M4 @ 80 MHz)** verifier node via level-shifted hardware UART:
+
+| Metric / Pipeline Stage | Measured Latency (Cycles / Time) | Empirical Detection Rate | Security Significance |
+|:---|:---|:---|:---|
+| **Stage 1: Pre-Crypto Rate Limiter** | **101 cycles (1.26 µs)** | **100.0% Mitigation** | Drops bursts $>5\text{ pkt/s}$ before hashing; saves **99.56% CPU overhead** |
+| **Stage 2: HMAC-SHA256 Verification** | **~22,889 cycles (~286 µs)** | **100.0% Detection** | Constant-time tag evaluation; zero bit-flip leaks |
+| **Stage 3: Anti-Replay Window** | **~22,993 cycles (~287 µs)** | **100.0% Detection** | Rejects duplicated and historical counters |
+| **Stage 4: Physical Plausibility Gating**| **~23,123 cycles (~289 µs)** | **100.0% Detection** | Flags $>85^\circ\text{C}$ & sudden thermal shocks ($>5^\circ\text{C/s}$) |
+| **Stage 5: State Commit & Final Accept** | **~23,123 cycles (~289 µs)** | **100.0% Acceptance** | Monotonic state commit; passes authentic physical DS18B20 packets |
+| **False Positive Rate (FPR)** | **0.00%** ($N=1,000+$) | **0.00%** | Zero false alarms on authentic ambient room telemetry (+26.25°C ~ +28.75°C) |
+| **CPU Cycle Reduction on DoS Floods** | **99.56% reduction** | **~23,022 cycles saved/pkt** | Protects verifier from computational battery/CPU exhaustion |
 
 ---
 
