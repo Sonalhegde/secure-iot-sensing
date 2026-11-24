@@ -2,7 +2,7 @@
 
 [![PlatformIO](https://img.shields.io/badge/PlatformIO-Compatible-orange.svg)](https://platformio.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Hardware: ATmega328P + STM32L476RG](https://img.shields.io/badge/Hardware-Nano%20%2B%20Nucleo--L476RG-brightgreen.svg)]()
+![Hardware: ATmega328P + STM32L476RG](https://img.shields.io/badge/Hardware-Nano%20%2B%20Nucleo--L476RG-brightgreen.svg)
 [![Python: 3.9+](https://img.shields.io/badge/Python-3.9%2B-blue.svg)](https://www.python.org/)
 
 An end-to-end, reproducible embedded security framework for resource-constrained IoT sensor nodes. Designed for an IEEE-style experimental evaluation, this project demonstrates authenticated sensing, cryptographic tamper protection, non-volatile sequence anti-replay tracking, pre-cryptographic rate limiting, and physical plausibility filtering across a heterogeneous 8-bit AVR to 32-bit ARM Cortex-M4 topology.
@@ -13,10 +13,10 @@ An end-to-end, reproducible embedded security framework for resource-constrained
 
 ```mermaid
 flowchart LR
-    DS["DS18B20 Sensor<br/>(Waterproof Probe)"] -->|OneWire (D2)| Nano["Arduino Nano Node<br/>(ATmega328P, 16 MHz)"]
-    Nano -->|UART TX (D1)| Div["Voltage Divider<br/>(1k / 2k to 3.3V)"]
-    Div -->|UART RX (PA10)| Nucleo["STM32 Nucleo-L476RG<br/>(Cortex-M4, 80 MHz)"]
-    Nucleo -->|USB VCP (ST-Link)| PC["PC Host<br/>(Python Attack & Eval Suite)"]
+    DS["DS18B20 Sensor Probe"] -->|"OneWire (D2)"| Nano["Arduino Nano Node (ATmega328P, 16 MHz)"]
+    Nano -->|"UART TX (D1)"| Div["Voltage Divider (1k / 2k to 3.3V)"]
+    Div -->|"UART RX (PA10)"| Nucleo["STM32 Nucleo-L476RG (Cortex-M4, 80 MHz)"]
+    Nucleo -->|"USB VCP (ST-Link)"| PC["PC Host (Python Attack & Telemetry HUD)"]
 ```
 
 ### The 5-Stage Verification Pipeline
@@ -25,18 +25,18 @@ The verifier executes defense checks in a strictly ordered pipeline. Early stage
 
 ```mermaid
 flowchart TD
-    Start(["Incoming 16-Byte Wire Packet"]) --> S1{"1. Rate Limiter<br/>Rate <= 5 pkt/s?"}
-    S1 -->|No: Rate > 5 pkt/s| DropFlood["Drop Packet & Log 'FLOOD'<br/>(Pre-Crypto Early Exit: ~120 cycles / 1.5 µs)"]
-    S1 -->|Yes| S2{"2. HMAC-SHA256<br/>64-bit Tag Matches?"}
-    S2 -->|No: Tag Mismatch| DropTamper["Drop Packet & Log 'TAMPER'<br/>(Constant-Time Check: ~42,000 cycles)"]
-    S2 -->|Yes| S3{"3. Sequence Counter<br/>Counter > Last Seen?"}
-    S3 -->|No: Counter <= Last| DropReplay["Drop Packet & Log 'REPLAY'<br/>(Anti-Replay Rejection)"]
-    S3 -->|Yes| S4{"4. Plausibility Check<br/>-10°C <= Temp <= +85°C &<br/>|ΔT|/Δt <= 5.0°C/s?"}
-    S4 -->|No: Anomaly Detected| DropFalse["Drop Packet & Log 'FALSE_DATA'<br/>(Physical Anomaly Rejection)"]
-    S4 -->|Yes| Accept["5. State Update & Acceptance<br/>- Update last_accepted_counter<br/>- Update last_accepted_temp<br/>- Update last_accepted_time<br/>Log 'ACCEPT' & Output Hex Frame"]
+    Start(["Incoming 16-Byte Wire Packet"]) --> S1{"Stage 1: Rate Limiter"}
+    S1 -->|"Rate > 5 pkt/s"| DropFlood["Drop Packet: Log FLOOD (Pre-Crypto Early Exit: 101 cycles / 1.26 us)"]
+    S1 -->|"Rate <= 5 pkt/s"| S2{"Stage 2: HMAC-SHA256"}
+    S2 -->|"Tag Mismatch"| DropTamper["Drop Packet: Log TAMPER (Constant-Time Check: ~22,889 cycles)"]
+    S2 -->|"Tag Valid"| S3{"Stage 3: Sequence Counter"}
+    S3 -->|"Counter <= Last Seen"| DropReplay["Drop Packet: Log REPLAY (Anti-Replay Window: ~22,993 cycles)"]
+    S3 -->|"Counter > Last Seen"| S4{"Stage 4: Plausibility Filter"}
+    S4 -->|"Range or Rate Anomaly"| DropFalse["Drop Packet: Log FALSE_DATA (Physics Check: ~23,123 cycles)"]
+    S4 -->|"Physically Valid"| Accept["Stage 5: State Commit & Acceptance (Log ACCEPT & Output Hex: ~23,123 cycles)"]
 ```
 
-1. **Pre-Crypto Rate Limiter:** Evaluates packet arrival rate before computing any cryptographic operations. Bursts exceeding 5 packets/second are dropped in **~120 cycles (1.5 µs)**, preventing Denial-of-Service CPU exhaustion.
+1. **Pre-Crypto Rate Limiter:** Evaluates packet arrival rate before computing any cryptographic operations. Bursts exceeding 5 packets/second are dropped in **101 cycles (1.26 µs)**, preventing Denial-of-Service CPU exhaustion.
 2. **Cryptographic Authentication (HMAC-SHA256):** Computes HMAC-SHA256 over the 7-byte payload and performs a constant-time comparison against the truncated 64-bit (8-byte) authentication tag. Detects single-bit wire tampering.
 3. **Sequence Anti-Replay Check:** Verifies that the 32-bit counter is strictly greater than the last accepted counter. The sensor node persists its counter to EEPROM in 100-packet epochs and jumps forward by 100 on boot, ensuring node reboots never trigger replay false positives.
 4. **Physical Plausibility Filter:** Evaluates whether readings conform to thermodynamic laws:
@@ -56,22 +56,22 @@ sequenceDiagram
     participant Nano as Arduino Nano Node
     participant Wire as Level-Shifted UART
     participant Nucleo as STM32 Nucleo Verifier
-    participant PC as PC Host (attacker.py)
+    participant PC as PC Host (Mission Control HUD)
 
     loop Periodic Telemetry (1 Hz)
-        Nano->>Sensor: requestTemperatures() (10-bit, ~188 ms)
-        Sensor-->>Nano: getTempCByIndex(0)
+        Nano->>Sensor: requestTemperatures (10-bit, ~188 ms)
+        Sensor-->>Nano: getTempCByIndex
         Nano->>Nano: Increment Sequence Counter (EEPROM sync every 100)
-        Nano->>Nano: Serialize Payload [NodeID(1B) | Counter(4B) | Temp(2B)]
-        Nano->>Nano: Compute HMAC-SHA256 & Truncate to 8 Bytes
+        Nano->>Nano: Serialize Payload (NodeID, Counter, Temp)
+        Nano->>Nano: Compute HMAC-SHA256 (Truncate to 8 Bytes)
         Nano->>Wire: Transmit 16-Byte Wire Packet at 115200 baud
         Wire->>Nucleo: SerialNano PA10 (USART1 RX)
-        Nucleo->>Nucleo: Check Rate Limiter (<= 5 pkt/s)
-        Nucleo->>Nucleo: Constant-Time HMAC-SHA256 Validation
-        Nucleo->>Nucleo: Monotonic Counter Freshness Check
-        Nucleo->>Nucleo: Thermodynamic Plausibility Check
-        Nucleo->>PC: Log CSV [LOG,ACCEPT,counter,temp,cycles]
-        Nucleo->>PC: Stream Packet Hex [HEX,aa01...]
+        Nucleo->>Nucleo: Stage 1: Rate Limiter (Max 5 pkt/s)
+        Nucleo->>Nucleo: Stage 2: Constant-Time HMAC-SHA256 Validation
+        Nucleo->>Nucleo: Stage 3: Monotonic Counter Freshness Check
+        Nucleo->>Nucleo: Stage 4: Thermodynamic Plausibility Check
+        Nucleo->>PC: Log CSV (LOG,ACCEPT,counter,temp,cycles)
+        Nucleo->>PC: Stream Packet Hex (HEX,aa01...)
     end
 ```
 
@@ -79,12 +79,12 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> WAIT_PREAMBLE: rx_index = 0
-    WAIT_PREAMBLE --> ACCUMULATE: Byte == 0xAA (Preamble matched)
-    WAIT_PREAMBLE --> WAIT_PREAMBLE: Byte != 0xAA (Ignore line noise)
-    ACCUMULATE --> ACCUMULATE: Byte received & rx_index < 16 & dt <= 20ms
-    ACCUMULATE --> WAIT_PREAMBLE: dt > 20ms (Inter-byte timeout reset)
-    ACCUMULATE --> PROCESS_FRAME: rx_index == 16 (Full frame captured)
-    PROCESS_FRAME --> WAIT_PREAMBLE: process_frame() & rx_index = 0
+    WAIT_PREAMBLE --> ACCUMULATE: Preamble matched (Byte == 0xAA)
+    WAIT_PREAMBLE --> WAIT_PREAMBLE: Ignore noise (Byte != 0xAA)
+    ACCUMULATE --> ACCUMULATE: Accumulate bytes (rx_index under 16, dt within 20ms)
+    ACCUMULATE --> WAIT_PREAMBLE: Timeout reset (dt over 20ms)
+    ACCUMULATE --> PROCESS_FRAME: Frame captured (rx_index == 16)
+    PROCESS_FRAME --> WAIT_PREAMBLE: Frame processed (rx_index = 0)
 ```
 
 ---
@@ -131,9 +131,10 @@ Nucleo ST-Link USB-----> PC (Dual Virtual COM Port for logging, attack injection
 > 3. **Nucleo Common Ground:** Connect the Arduino Nano GND to **Nucleo CN6 Pin 6 (GND)**. Do **NOT** connect to CN6 Pin 4 (which is the +3.3V rail), as doing so will dead-short the power rail and crash the verifier.
 > 4. **Nano Upload Collisions:** Always disconnect the wire from pin **D1 (TX)** before flashing firmware to the Arduino Nano to avoid avrdude programming conflicts.
 
-> **Voltage Divider Calculation:**
-> $$V_{\text{out}} = 5.0\text{ V} \times \frac{2\text{ k}\Omega}{1\text{ k}\Omega + 2\text{ k}\Omega} = 3.333\text{ V}$$
-> This provides a safe, level-shifted signal for STM32 3.3 V logic (Nucleo pin PA10 is also 5 V tolerant).
+**Voltage Divider Calculation:**
+$$V_{\text{out}} = 5.0\text{ V} \times \frac{2\text{ k}\Omega}{1\text{ k}\Omega + 2\text{ k}\Omega} = 3.333\text{ V}$$
+
+This provides a safe, level-shifted signal for STM32 3.3 V logic (Nucleo pin PA10 is also 5 V tolerant).
 
 ---
 
@@ -264,12 +265,12 @@ python spoof_attack_demo.py
 ```
 
 #### Automated Evaluation Vectors:
-1. **Baseline Legitimate Packet:** Submits authentic packet with valid counter, real temperature, and correct HMAC tag $\rightarrow$ Verified & Accepted in **~23,123 cycles**.
-2. **Attack 1 (HMAC Tamper / Blind Spoofing):** Injects corrupted tag bytes without the 128-bit secret key $\rightarrow$ Caught by **Stage 2 (HMAC-SHA256)** in **~22,889 cycles**.
-3. **Attack 2 (Replay Spoofing Attack):** Re-transmits previously captured authentic frame $\rightarrow$ Caught by **Stage 3 (Anti-Replay Window)** in **~22,993 cycles**.
-4. **Attack 3 (Physical False-Data Jump):** Adversary with valid key injects physically impossible $+35.0^\circ\text{C}$ jump in 50 ms $\rightarrow$ Caught by **Stage 4 (Physical Plausibility)** in **~23,147 cycles**.
-5. **Attack 4 (Out-of-Bounds Injection):** Injects validly signed $+95.0^\circ\text{C}$ reading ($>85.0^\circ\text{C}$ limit) $\rightarrow$ Caught by **Stage 4 (Plausibility Range)** in **~23,025 cycles**.
-6. **Attack 5 (Pre-Crypto DoS Flood Burst):** Bursts 15 high-speed packets $\rightarrow$ **10/15 dropped by Stage 1 Rate Limiter in only 101 cycles (1.26 µs)**, saving 99.56% of cryptographic CPU overhead!
+1. **Baseline Legitimate Packet:** Submits authentic packet with valid counter, real temperature, and correct HMAC tag -> Verified & Accepted in **~23,123 cycles**.
+2. **Attack 1 (HMAC Tamper / Blind Spoofing):** Injects corrupted tag bytes without the 128-bit secret key -> Caught by **Stage 2 (HMAC-SHA256)** in **~22,889 cycles**.
+3. **Attack 2 (Replay Spoofing Attack):** Re-transmits previously captured authentic frame -> Caught by **Stage 3 (Anti-Replay Window)** in **~22,993 cycles**.
+4. **Attack 3 (Physical False-Data Jump):** Adversary with valid key injects physically impossible +35.0 °C jump in 50 ms -> Caught by **Stage 4 (Physical Plausibility)** in **~23,147 cycles**.
+5. **Attack 4 (Out-of-Bounds Injection):** Injects validly signed +95.0 °C reading (exceeding +85.0 °C limit) -> Caught by **Stage 4 (Plausibility Range)** in **~23,025 cycles**.
+6. **Attack 5 (Pre-Crypto DoS Flood Burst):** Bursts 15 high-speed packets -> **10/15 dropped by Stage 1 Rate Limiter in only 101 cycles (1.26 µs)**, saving 99.56% of cryptographic CPU overhead!
 
 ---
 
@@ -336,12 +337,12 @@ Empirical evaluation conducted on a physical **Arduino Nano (ATmega328P @ 16 MHz
 
 | Metric / Pipeline Stage | Measured Latency (Cycles / Time) | Empirical Detection Rate | Security Significance |
 |:---|:---|:---|:---|
-| **Stage 1: Pre-Crypto Rate Limiter** | **101 cycles (1.26 µs)** | **100.0% Mitigation** | Drops bursts $>5\text{ pkt/s}$ before hashing; saves **99.56% CPU overhead** |
+| **Stage 1: Pre-Crypto Rate Limiter** | **101 cycles (1.26 µs)** | **100.0% Mitigation** | Drops bursts > 5 pkt/s before hashing; saves **99.56% CPU overhead** |
 | **Stage 2: HMAC-SHA256 Verification** | **~22,889 cycles (~286 µs)** | **100.0% Detection** | Constant-time tag evaluation; zero bit-flip leaks |
 | **Stage 3: Anti-Replay Window** | **~22,993 cycles (~287 µs)** | **100.0% Detection** | Rejects duplicated and historical counters |
-| **Stage 4: Physical Plausibility Gating**| **~23,123 cycles (~289 µs)** | **100.0% Detection** | Flags $>85^\circ\text{C}$ & sudden thermal shocks ($>5^\circ\text{C/s}$) |
+| **Stage 4: Physical Plausibility Gating**| **~23,123 cycles (~289 µs)** | **100.0% Detection** | Flags readings > +85.0 °C & sudden thermal shocks (> 5.0 °C/s) |
 | **Stage 5: State Commit & Final Accept** | **~23,123 cycles (~289 µs)** | **100.0% Acceptance** | Monotonic state commit; passes authentic physical DS18B20 packets |
-| **False Positive Rate (FPR)** | **0.00%** ($N=1,000+$) | **0.00%** | Zero false alarms on authentic ambient room telemetry (+26.25°C ~ +28.75°C) |
+| **False Positive Rate (FPR)** | **0.00%** (N = 1,000+ trials) | **0.00%** | Zero false alarms on authentic ambient room telemetry (+26.25°C ~ +28.75°C) |
 | **CPU Cycle Reduction on DoS Floods** | **99.56% reduction** | **~23,022 cycles saved/pkt** | Protects verifier from computational battery/CPU exhaustion |
 
 ---
